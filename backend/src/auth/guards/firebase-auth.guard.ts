@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { UserRole } from '@prisma/client';
 import * as admin from 'firebase-admin';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -92,7 +93,7 @@ export class FirebaseAuthGuard implements CanActivate {
     }
 
     // Look up user in database
-    const user = await this.prisma.user.findUnique({
+    let user: any = await this.prisma.user.findUnique({
       where: { firebaseUid },
       include: {
         manager: { select: { id: true, restaurantId: true } },
@@ -100,6 +101,33 @@ export class FirebaseAuthGuard implements CanActivate {
         deliveryPartner: { select: { id: true } },
       },
     });
+
+    // In dev mode with SKIP_FIREBASE_AUTH=true, auto-provision user if missing
+    if (!user && skipFirebase) {
+      this.logger.log(`Dev Mode: Auto-provisioning missing user for firebaseUid: ${firebaseUid}`);
+      const isDevAdmin = firebaseUid.includes('admin');
+      const isDevManager = firebaseUid.includes('mgr') || firebaseUid.includes('manager');
+      const isDevPartner = firebaseUid.includes('dp') || firebaseUid.includes('partner');
+
+      const role: UserRole = isDevAdmin ? UserRole.ADMIN : isDevManager ? UserRole.MANAGER : isDevPartner ? UserRole.DELIVERY_PARTNER : UserRole.CUSTOMER;
+
+      user = await this.prisma.user.create({
+        data: {
+          firebaseUid,
+          name: `${firebaseUid}`,
+          phone: '+91 98000 00000',
+          email: `${firebaseUid}@foodconnect.local`,
+          role,
+          customer: role === UserRole.CUSTOMER ? { create: { name: firebaseUid, phone: '+91 98000 00000' } } : undefined,
+          deliveryPartner: role === UserRole.DELIVERY_PARTNER ? { create: { phone: '+91 98000 00000' } } : undefined,
+        },
+        include: {
+          manager: { select: { id: true, restaurantId: true } },
+          customer: { select: { id: true } },
+          deliveryPartner: { select: { id: true } },
+        },
+      });
+    }
 
     if (!user) {
       throw new UnauthorizedException('User not found in database');
