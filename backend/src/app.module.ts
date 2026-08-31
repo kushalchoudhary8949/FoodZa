@@ -43,15 +43,24 @@ import { AdminsModule } from './admins/admins.module';
       },
     ]),
 
-    // BullMQ (job queue backed by Redis)
+    // BullMQ (job queue backed by Redis with Upstash / TLS support)
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        connection: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const host = config.get<string>('REDIS_HOST', 'localhost');
+        const port = Number(config.get('REDIS_PORT', 6379));
+        const password = config.get<string>('REDIS_PASSWORD') || undefined;
+        const isTls = config.get<string>('REDIS_TLS') === 'true' || host.includes('upstash.io');
+
+        return {
+          connection: {
+            host,
+            port,
+            password,
+            tls: isTls ? { rejectUnauthorized: false } : undefined,
+          },
+        };
+      },
       inject: [ConfigService],
     }),
 

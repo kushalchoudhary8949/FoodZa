@@ -27,6 +27,9 @@ out/
 # Logs & Temporary files
 *.log
 npm-debug.log*
+.vite/
+skills-lock.json
+
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
