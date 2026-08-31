@@ -29,6 +29,8 @@ out/
 npm-debug.log*
 .vite/
 skills-lock.json
+.agents/
+
 
 yarn-debug.log*
 yarn-error.log*
