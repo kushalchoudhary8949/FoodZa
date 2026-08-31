@@ -1,0 +1,6 @@
+{
+  "name": "Store Manager Panel",
+  "description": "Store Manager Panel for food delivery operations, real-time order processing, live alerts, menu & store management, issue tracking, and sales analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

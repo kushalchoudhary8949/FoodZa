@@ -1,0 +1,159 @@
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+export class ManagerApiClient {
+  private static token: string | null = localStorage.getItem('fc_manager_token') || 'mgr_kfc_main';
+
+  static setToken(token: string | null) {
+    this.token = token;
+    if (token) {
+      localStorage.setItem('fc_manager_token', token);
+    } else {
+      localStorage.removeItem('fc_manager_token');
+    }
+  }
+
+  static getToken(): string | null {
+    return this.token;
+  }
+
+  static async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    const json = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const errorMsg = json.message || json.error || `HTTP ${response.status}`;
+      throw new Error(errorMsg);
+    }
+
+    return (json.data !== undefined ? json.data : json) as T;
+  }
+
+  // ── Auth & Profile ──
+  static async getProfile() {
+    return this.request('/auth/profile');
+  }
+
+  // ── Store Management ──
+  static async toggleStoreOpen(storeId: string) {
+    return this.request(`/stores/${storeId}/toggle-open`, { method: 'POST' });
+  }
+
+  static async updateStore(storeId: string, data: any) {
+    return this.request(`/stores/${storeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ── Order Workflow ──
+  static async getStoreOrders() {
+    return this.request<any[]>('/orders/store-orders');
+  }
+
+  static async acceptOrder(orderId: string, reason?: string) {
+    return this.request(`/orders/${orderId}/manager/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  static async rejectOrder(orderId: string, reason?: string) {
+    return this.request(`/orders/${orderId}/manager/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  static async startPreparingOrder(orderId: string) {
+    return this.request(`/orders/${orderId}/preparing`, { method: 'POST' });
+  }
+
+  static async markFoodReady(orderId: string) {
+    return this.request(`/orders/${orderId}/ready`, { method: 'POST' });
+  }
+
+  // ── Menu Management ──
+  static async getStoreMenu(storeId: string) {
+    return this.request<any[]>(`/stores/${storeId}/menu`);
+  }
+
+  static async addCategory(storeId: string, name: string, description?: string) {
+    return this.request(`/stores/${storeId}/menu/categories`, {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    });
+  }
+
+  static async updateCategory(categoryId: string, name: string, description?: string) {
+    return this.request(`/menu/categories/${categoryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, description }),
+    });
+  }
+
+  static async deleteCategory(categoryId: string) {
+    return this.request(`/menu/categories/${categoryId}`, { method: 'DELETE' });
+  }
+
+  static async addMenuItem(storeId: string, item: any) {
+    return this.request(`/stores/${storeId}/menu/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  }
+
+  static async updateMenuItem(itemId: string, updates: any) {
+    return this.request(`/menu/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  static async toggleItemAvailability(itemId: string, isAvailable: boolean) {
+    return this.request(`/menu/items/${itemId}/availability`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isAvailable }),
+    });
+  }
+
+  static async deleteMenuItem(itemId: string) {
+    return this.request(`/menu/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  // ── Sales ──
+  static async getStoreSales(storeId: string) {
+    return this.request(`/sales/store/${storeId}`);
+  }
+
+  // ── Issue Box ──
+  static async createIssue(category: string, subject: string, initialMessage: string) {
+    return this.request('/issues', {
+      method: 'POST',
+      body: JSON.stringify({ category, subject, initialMessage }),
+    });
+  }
+
+  static async getIssues() {
+    return this.request<any[]>('/issues');
+  }
+
+  static async sendMessageToIssue(issueId: string, message: string) {
+    return this.request(`/issues/${issueId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  }
+}

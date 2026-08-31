@@ -1,0 +1,714 @@
+// ════════════════════════════════════════════════════════════════════════
+// FoodConnect — Prisma Schema
+// ════════════════════════════════════════════════════════════════════════
+// Database:   PostgreSQL
+// ORM:        Prisma
+// Platform:   Multi-role food delivery (Customer, Manager, Admin, Partner)
+// ════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ──────────────────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  MANAGER
+  ADMIN
+  DELIVERY_PARTNER
+}
+
+enum FoodType {
+  VEG
+  NON_VEG
+}
+
+enum OrderStatus {
+  WAITING_FOR_MANAGER
+  MANAGER_ACCEPTED
+  MANAGER_REJECTED
+  MANAGER_TIMEOUT
+  WAITING_FOR_ADMIN
+  ADMIN_ACCEPTED
+  ADMIN_REJECTED
+  PREPARING
+  READY_FOR_PICKUP
+  WAITING_FOR_PARTNER
+  DELIVERY_ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DeliveryRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum OnlineStatus {
+  ONLINE
+  OFFLINE
+}
+
+enum NotificationType {
+  NEW_ORDER
+  ORDER_UPDATE
+  DELIVERY_REQUEST
+  DELIVERY_UPDATE
+  ADMIN_ALERT
+  ISSUE_MESSAGE
+  OFFER
+  SYSTEM
+}
+
+enum IssueCategory {
+  ORDER
+  PAYMENT
+  DELIVERY
+  MENU
+  STORE
+  TECHNICAL
+  OTHER
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// ──────────────────────────────────────────────────────────
+// USER
+// ──────────────────────────────────────────────────────────
+// Central user table. Authentication is handled by Firebase;
+// this table stores application profile/role data and the
+// Firebase UID for linking.
+// No plaintext passwords are stored.
+
+model User {
+  id          String   @id @default(cuid())
+  firebaseUid String   @unique @map("firebase_uid")
+  name        String
+  phone       String?
+  email       String?  @unique
+  role        UserRole
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  customer        Customer?
+  manager         Manager?
+  deliveryPartner DeliveryPartner?
+  notifications   Notification[]
+  deviceTokens    DeviceToken[]
+  orderEvents     OrderEvent[]     @relation("EventActor")
+  issuesCreated   Issue[]          @relation("IssueCreator")
+  issueMessages   IssueMessage[]   @relation("MessageSender")
+  auditLogs       AuditLog[]       @relation("AuditActor")
+
+  @@index([role])
+  @@index([firebaseUid])
+  @@index([isActive])
+  @@map("users")
+}
+
+// ──────────────────────────────────────────────────────────
+// CUSTOMER
+// ──────────────────────────────────────────────────────────
+
+model Customer {
+  id             String   @id @default(cuid())
+  userId         String   @unique @map("user_id")
+  name           String
+  phone          String?
+  defaultAddress String?  @map("default_address")
+  hostelOrPgName String?  @map("hostel_or_pg_name")
+  roomNumber     String?  @map("room_number")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  addresses   Address[]
+  orders      Order[]
+  offerUsages OfferUsage[]
+
+  @@index([userId])
+  @@map("customers")
+}
+
+// ──────────────────────────────────────────────────────────
+// ADDRESS
+// ──────────────────────────────────────────────────────────
+
+model Address {
+  id             String   @id @default(cuid())
+  customerId     String   @map("customer_id")
+  label          String?  // e.g. "Home", "Hostel", "Office"
+  addressLine    String   @map("address_line")
+  hostelOrPgName String?  @map("hostel_or_pg_name")
+  roomNumber     String?  @map("room_number")
+  landmark       String?
+  latitude       Decimal? @db.Decimal(10, 7)
+  longitude      Decimal? @db.Decimal(10, 7)
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orders   Order[]
+
+  @@index([customerId])
+  @@index([isDefault])
+  @@map("addresses")
+}
+
+// ──────────────────────────────────────────────────────────
+// RESTAURANT
+// ──────────────────────────────────────────────────────────
+
+model Restaurant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?  @map("image_url")
+  phone       String?
+  address     String?
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+  openingTime String?  @map("opening_time") // e.g. "09:00"
+  closingTime String?  @map("closing_time") // e.g. "23:00"
+  isOpen      Boolean  @default(true) @map("is_open")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  managers       Manager[]
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  orders         Order[]
+  offers         Offer[]
+  issues         Issue[]
+
+  @@index([isActive])
+  @@index([isOpen])
+  @@index([slug])
+  @@map("restaurants")
+}
+
+// ──────────────────────────────────────────────────────────
+// MANAGER
+// ──────────────────────────────────────────────────────────
+// A manager belongs to exactly one restaurant.
+// Restaurant isolation is enforced by the backend.
+
+model Manager {
+  id           String   @id @default(cuid())
+  userId       String   @unique @map("user_id")
+  restaurantId String   @map("restaurant_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([restaurantId])
+  @@map("managers")
+}
+
+// ──────────────────────────────────────────────────────────
+// MENU CATEGORY
+// ──────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  name         String
+  description  String?
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  menuItems  MenuItem[]
+
+  @@index([restaurantId])
+  @@index([displayOrder])
+  @@map("menu_categories")
+}
+
+// ──────────────────────────────────────────────────────────
+// MENU ITEM
+// ──────────────────────────────────────────────────────────
+
+model MenuItem {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  categoryId   String   @map("category_id")
+  name         String
+  description  String?
+  imageUrl     String?  @map("image_url")
+  price        Decimal  @db.Decimal(10, 2)
+  foodType     FoodType @map("food_type")
+  isAvailable  Boolean  @default(true) @map("is_available")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  category   MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@index([restaurantId])
+  @@index([categoryId])
+  @@index([isAvailable])
+  @@index([restaurantId, isAvailable, isActive])
+  @@map("menu_items")
+}
+
+// ──────────────────────────────────────────────────────────
+// ORDER
+// ──────────────────────────────────────────────────────────
+// The central order model. Stores snapshots of delivery info
+// so historical orders are immune to address/menu edits.
+// All monetary values use Decimal to avoid floating-point issues.
+
+model Order {
+  id                      String      @id @default(cuid())
+  orderNumber             String      @unique @map("order_number")
+  customerId              String      @map("customer_id")
+  restaurantId            String      @map("restaurant_id")
+  deliveryPartnerId       String?     @map("delivery_partner_id")
+  addressId               String?     @map("address_id")
+
+  // Delivery address snapshots (immutable after order creation)
+  deliveryAddress         String?     @map("delivery_address")
+  hostelOrPgName          String?     @map("hostel_or_pg_name")
+  roomNumber              String?     @map("room_number")
+
+  // Money fields — Decimal, never float
+  subtotal                Decimal     @db.Decimal(10, 2)
+  deliveryFee             Decimal     @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  discountAmount          Decimal     @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  totalAmount             Decimal     @map("total_amount") @db.Decimal(10, 2)
+
+  // Payment
+  paymentMethod           PaymentMethod @map("payment_method")
+  paymentStatus           PaymentStatus @default(PENDING) @map("payment_status")
+
+  // Order lifecycle
+  status                  OrderStatus @default(WAITING_FOR_MANAGER)
+  managerResponseDeadline DateTime?   @map("manager_response_deadline")
+
+  // Timestamps
+  createdAt               DateTime    @default(now()) @map("created_at")
+  updatedAt               DateTime    @updatedAt @map("updated_at")
+  acceptedAt              DateTime?   @map("accepted_at")
+  rejectedAt              DateTime?   @map("rejected_at")
+  preparedAt              DateTime?   @map("prepared_at")
+  readyAt                 DateTime?   @map("ready_at")
+  pickedUpAt              DateTime?   @map("picked_up_at")
+  deliveredAt             DateTime?   @map("delivered_at")
+  cancelledAt             DateTime?   @map("cancelled_at")
+
+  // Relations
+  customer        Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  restaurant      Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  deliveryPartner DeliveryPartner?  @relation(fields: [deliveryPartnerId], references: [id], onDelete: SetNull)
+  address         Address?          @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  orderItems      OrderItem[]
+  payment         Payment?
+  deliveryOtps    DeliveryOtp[]
+  deliveryRequests DeliveryRequest[]
+  orderEvents     OrderEvent[]
+  offerUsages     OfferUsage[]
+
+  @@index([customerId])
+  @@index([restaurantId])
+  @@index([deliveryPartnerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([orderNumber])
+  @@index([status, createdAt])
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, status])
+  @@index([customerId, createdAt])
+  @@map("orders")
+}
+
+// ──────────────────────────────────────────────────────────
+// ORDER ITEM
+// ──────────────────────────────────────────────────────────
+// Stores snapshots of item name and price at the time of order.
+// menuItemId is nullable to survive menu item hard-deletes (though
+// soft-delete is preferred).
+
+model OrderItem {
+  id               String   @id @default(cuid())
+  orderId          String   @map("order_id")
+  menuItemId       String?  @map("menu_item_id")
+  itemNameSnapshot String   @map("item_name_snapshot")
+  unitPrice        Decimal  @map("unit_price") @db.Decimal(10, 2)
+  quantity         Int
+  totalPrice       Decimal  @map("total_price") @db.Decimal(10, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@map("order_items")
+}
+
+// ──────────────────────────────────────────────────────────
+// DELIVERY PARTNER
+// ──────────────────────────────────────────────────────────
+// Independent delivery workers, not tied to any restaurant.
+
+model DeliveryPartner {
+  id              String       @id @default(cuid())
+  userId          String       @unique @map("user_id")
+  phone           String?
+  onlineStatus    OnlineStatus @default(OFFLINE) @map("online_status")
+  isActive        Boolean      @default(true) @map("is_active")
+  currentOrderId  String?      @map("current_order_id")
+  totalDeliveries Int          @default(0) @map("total_deliveries")
+  totalEarnings   Decimal      @default(0) @map("total_earnings") @db.Decimal(12, 2)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orders           Order[]
+  deliveryRequests DeliveryRequest[]
+
+  @@index([userId])
+  @@index([onlineStatus])
+  @@index([isActive])
+  @@index([onlineStatus, isActive])
+  @@map("delivery_partners")
+}
+
+// ──────────────────────────────────────────────────────────
+// DELIVERY REQUEST
+// ──────────────────────────────────────────────────────────
+// Tracks individual delivery offers to partners. One order can
+// generate multiple requests as partners accept/reject/timeout.
+
+model DeliveryRequest {
+  id                String                @id @default(cuid())
+  orderId           String                @map("order_id")
+  deliveryPartnerId String                @map("delivery_partner_id")
+  status            DeliveryRequestStatus @default(PENDING)
+  offeredAt         DateTime              @default(now()) @map("offered_at")
+  expiresAt         DateTime              @map("expires_at")
+  respondedAt       DateTime?             @map("responded_at")
+  acceptedAt        DateTime?             @map("accepted_at")
+  rejectedAt        DateTime?             @map("rejected_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  // Relations
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  deliveryPartner DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([deliveryPartnerId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([deliveryPartnerId, status])
+  @@map("delivery_requests")
+}
+
+// ──────────────────────────────────────────────────────────
+// PAYMENT
+// ──────────────────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique @map("order_id")
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  amount          Decimal       @db.Decimal(10, 2)
+  transactionId   String?       @map("transaction_id")
+  collectedAmount Decimal?      @map("collected_amount") @db.Decimal(10, 2) // For COD: amount collected by partner
+  paidAt          DateTime?     @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([method])
+  @@map("payments")
+}
+
+// ──────────────────────────────────────────────────────────
+// DELIVERY OTP
+// ──────────────────────────────────────────────────────────
+// OTP is hashed. The backend generates, hashes, and verifies.
+
+model DeliveryOtp {
+  id         String    @id @default(cuid())
+  orderId    String    @map("order_id")
+  hashedOtp  String    @map("hashed_otp")
+  expiresAt  DateTime  @map("expires_at")
+  verifiedAt DateTime? @map("verified_at")
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([expiresAt])
+  @@map("delivery_otps")
+}
+
+// ──────────────────────────────────────────────────────────
+// ORDER EVENT (Timeline / Audit Trail)
+// ──────────────────────────────────────────────────────────
+// Immutable log of every state transition and significant event.
+
+model OrderEvent {
+  id             String       @id @default(cuid())
+  orderId        String       @map("order_id")
+  actorUserId    String?      @map("actor_user_id")
+  eventType      String       @map("event_type") // e.g. "ORDER_CREATED", "MANAGER_ACCEPTED"
+  previousStatus OrderStatus? @map("previous_status")
+  newStatus      OrderStatus? @map("new_status")
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  actor User? @relation("EventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([orderId, createdAt])
+  @@index([eventType])
+  @@map("order_events")
+}
+
+// ──────────────────────────────────────────────────────────
+// NOTIFICATION
+// ──────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readAt])
+  @@index([userId, readAt])
+  @@index([type])
+  @@map("notifications")
+}
+
+// ──────────────────────────────────────────────────────────
+// DEVICE TOKEN (Push Notifications)
+// ──────────────────────────────────────────────────────────
+// Supports multiple devices per user.
+
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  platform  String?  // e.g. "android", "ios", "web"
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("device_tokens")
+}
+
+// ──────────────────────────────────────────────────────────
+// OFFER
+// ──────────────────────────────────────────────────────────
+// If restaurantId is null → platform-wide offer.
+// If restaurantId is set → restaurant-specific offer.
+
+model Offer {
+  id                String       @id @default(cuid())
+  name              String
+  description       String?
+  code              String       @unique
+  discountType      DiscountType @map("discount_type")
+  discountValue     Decimal      @map("discount_value") @db.Decimal(10, 2)
+  minimumOrderAmount Decimal?    @map("minimum_order_amount") @db.Decimal(10, 2)
+  maximumDiscount   Decimal?     @map("maximum_discount") @db.Decimal(10, 2)
+  restaurantId      String?      @map("restaurant_id")
+  startAt           DateTime     @map("start_at")
+  endAt             DateTime     @map("end_at")
+  isActive          Boolean      @default(true) @map("is_active")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant  Restaurant?  @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  offerUsages OfferUsage[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([restaurantId])
+  @@index([startAt, endAt])
+  @@map("offers")
+}
+
+// ──────────────────────────────────────────────────────────
+// OFFER USAGE
+// ──────────────────────────────────────────────────────────
+// Tracks which customer used which offer on which order.
+// Unique constraint prevents duplicate redemption per customer+offer.
+
+model OfferUsage {
+  id             String   @id @default(cuid())
+  offerId        String   @map("offer_id")
+  customerId     String   @map("customer_id")
+  orderId        String   @map("order_id")
+  discountAmount Decimal  @map("discount_amount") @db.Decimal(10, 2)
+  usedAt         DateTime @default(now()) @map("used_at")
+
+  // Relations
+  offer    Offer    @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([offerId, customerId])
+  @@index([offerId])
+  @@index([customerId])
+  @@index([orderId])
+  @@map("offer_usages")
+}
+
+// ──────────────────────────────────────────────────────────
+// ISSUE (Support Ticket)
+// ──────────────────────────────────────────────────────────
+// Manager ↔ Admin communication channel.
+
+model Issue {
+  id              String        @id @default(cuid())
+  restaurantId    String        @map("restaurant_id")
+  createdByUserId String        @map("created_by_user_id")
+  category        IssueCategory
+  subject         String
+  status          IssueStatus   @default(OPEN)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  resolvedAt      DateTime?     @map("resolved_at")
+
+  // Relations
+  restaurant Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  createdBy  User           @relation("IssueCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  messages   IssueMessage[]
+
+  @@index([restaurantId])
+  @@index([status])
+  @@index([createdByUserId])
+  @@index([restaurantId, status])
+  @@map("issues")
+}
+
+// ──────────────────────────────────────────────────────────
+// ISSUE MESSAGE
+// ──────────────────────────────────────────────────────────
+
+model IssueMessage {
+  id           String   @id @default(cuid())
+  issueId      String   @map("issue_id")
+  senderUserId String   @map("sender_user_id")
+  message      String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  issue  Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  sender User  @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Restrict)
+
+  @@index([issueId])
+  @@index([senderUserId])
+  @@map("issue_messages")
+}
+
+// ──────────────────────────────────────────────────────────
+// AUDIT LOG
+// ──────────────────────────────────────────────────────────
+// Immutable log of important admin/system actions.
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?  @map("actor_user_id")
+  action      String   // e.g. "STORE_CREATED", "PARTNER_DISABLED"
+  entityType  String   @map("entity_type") // e.g. "Restaurant", "User"
+  entityId    String   @map("entity_id")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

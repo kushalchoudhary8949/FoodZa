@@ -1,0 +1,1 @@
+{"name":"Delivery Partner Panel","description":"Delivery Partner management and order fulfillment panel for food delivery with real-time dispatch, navigation, OTP verification, and earnings tracking.","requestFramePermissions":["geolocation"],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

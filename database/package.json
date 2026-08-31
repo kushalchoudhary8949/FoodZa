@@ -1,0 +1,32 @@
+{
+  "name": "foodconnect-database",
+  "version": "1.0.0",
+  "description": "FoodConnect food delivery platform — Database layer (Prisma + PostgreSQL)",
+  "private": true,
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:reset": "prisma migrate reset",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "prisma db seed",
+    "prisma:validate": "prisma validate",
+    "prisma:format": "prisma format",
+    "db:push": "prisma db push",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.9.0",
+    "typescript": "^5.7.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^22.0.0",
+    "@types/bcryptjs": "^2.4.0",
+    "bcryptjs": "^2.4.3"
+  }
+}
