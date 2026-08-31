@@ -57,6 +57,8 @@ import { AdminsModule } from './admins/admins.module';
             host,
             port,
             password,
+            maxRetriesPerRequest: null,
+            enableReadyCheck: false,
             tls: isTls ? { rejectUnauthorized: false } : undefined,
           },
         };

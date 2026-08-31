@@ -12,15 +12,19 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT', 3000);
-  const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:3000');
+  const port = process.env.PORT || configService.get<number>('PORT', 3000);
+  const corsOrigins = configService.get<string>('CORS_ORIGINS', '*');
 
   // Security
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    }),
+  );
 
   // CORS
   app.enableCors({
-    origin: corsOrigins.split(',').map((o) => o.trim()),
+    origin: corsOrigins === '*' ? true : corsOrigins.split(',').map((o) => o.trim()),
     credentials: true,
   });
 
@@ -44,9 +48,10 @@ async function bootstrap() {
   // API prefix
   app.setGlobalPrefix('api');
 
-  await app.listen(port);
-  logger.log(`🚀 FoodConnect backend running on http://localhost:${port}`);
-  logger.log(`📡 Socket.IO available on ws://localhost:${port}`);
+  // Listen on 0.0.0.0 required for cloud platforms like Render
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 FoodConnect backend running on http://0.0.0.0:${port}`);
+  logger.log(`📡 Socket.IO available on port ${port}`);
 }
 
 bootstrap();
