@@ -8,7 +8,7 @@ export const getPartnerSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
     });
   }
   return socket;

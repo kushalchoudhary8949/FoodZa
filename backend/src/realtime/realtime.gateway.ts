@@ -13,7 +13,9 @@ import { Logger } from '@nestjs/common';
 @WebSocketGateway({
   cors: {
     origin: '*',
+    credentials: true,
   },
+  transports: ['polling', 'websocket'],
 })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
