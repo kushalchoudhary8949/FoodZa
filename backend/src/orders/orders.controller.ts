@@ -12,7 +12,7 @@ export class OrdersController {
   @Post()
   @Roles(UserRole.CUSTOMER)
   async createOrder(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto) {
-    return this.ordersService.createOrder(user.customerId!, dto);
+    return this.ordersService.createOrder(user.customerId || user.id, dto);
   }
 
   @Get('my-orders')

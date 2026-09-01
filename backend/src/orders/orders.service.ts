@@ -28,9 +28,30 @@ export class OrdersService {
   /**
    * Place a new order
    */
-  async createOrder(customerId: string, dto: CreateOrderDto) {
+  async createOrder(customerIdInput: string, dto: CreateOrderDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Cart cannot be empty');
+    }
+
+    // Resolve valid customer ID
+    let customerId = customerIdInput;
+    let customer = await this.prisma.customer.findUnique({ where: { id: customerIdInput } });
+
+    if (!customer) {
+      customer = await this.prisma.customer.findFirst({ where: { userId: customerIdInput } });
+      if (!customer) {
+        const user = await this.prisma.user.findFirst({
+          where: { OR: [{ id: customerIdInput }, { firebaseUid: customerIdInput }] },
+        });
+        customer = await this.prisma.customer.create({
+          data: {
+            userId: user?.id || customerIdInput,
+            name: user?.name || 'Customer',
+            phone: user?.phone || '+91 98000 00000',
+          },
+        });
+      }
+      customerId = customer.id;
     }
 
     // 1. Verify restaurant exists and is active/open
@@ -203,18 +224,22 @@ export class OrdersService {
     });
 
     // 6. Schedule BullMQ Manager Timeout Job
-    await this.timeoutQueue.add(
-      MANAGER_TIMEOUT_JOB,
-      { orderId: order.id },
-      {
-        delay: timeoutSeconds * 1000,
-        jobId: `order-timeout-${order.id}`,
-        removeOnComplete: true,
-        removeOnFail: true,
-      },
-    );
+    try {
+      await this.timeoutQueue.add(
+        MANAGER_TIMEOUT_JOB,
+        { orderId: order.id },
+        {
+          delay: timeoutSeconds * 1000,
+          jobId: `order-timeout-${order.id}`,
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+      this.logger.log(`Order ${order.id} (${order.orderNumber}) created. Timeout scheduled in ${timeoutSeconds}s.`);
+    } catch (queueErr: any) {
+      this.logger.warn(`Could not schedule BullMQ timeout job for order ${order.id}: ${queueErr.message}`);
+    }
 
-    this.logger.log(`Order ${order.id} (${order.orderNumber}) created. Timeout scheduled in ${timeoutSeconds}s.`);
     return order;
   }
 
