@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { CustomerDeliveryDetails } from '../types';
 import { X, MapPin, Building2, DoorClosed, Phone, User, CheckCircle2, CreditCard, Banknote, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
@@ -19,13 +19,27 @@ export const CheckoutModal: React.FC = () => {
   } = useApp();
 
   const [deliveryDetails, setDeliveryDetails] = useState<CustomerDeliveryDetails>({
-    name: user?.name || '',
-    phone: user?.phone || '',
-    address: user?.address || '',
-    hostelOrPg: user?.hostelOrPg || '',
-    roomNumber: user?.roomNumber || '',
+    name: user?.name || 'Rahul Sharma',
+    phone: user?.phone || '+91 98765 43210',
+    address: user?.address || 'Boys Hostel B (Aryabhatta), Room 204',
+    hostelOrPg: user?.hostelOrPg || 'Boys Hostel B',
+    roomNumber: user?.roomNumber || '204',
     notes: '',
   });
+
+  // Sync state whenever user object updates
+  useEffect(() => {
+    if (user) {
+      setDeliveryDetails({
+        name: user.name || 'Rahul Sharma',
+        phone: user.phone || '+91 98765 43210',
+        address: user.address || 'Boys Hostel B (Aryabhatta), Room 204',
+        hostelOrPg: user.hostelOrPg || 'Boys Hostel B',
+        roomNumber: user.roomNumber || '204',
+        notes: '',
+      });
+    }
+  }, [user]);
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash on Delivery' | 'UPI / Online (Upcoming)'>('Cash on Delivery');
 
@@ -33,8 +47,15 @@ export const CheckoutModal: React.FC = () => {
 
   const handlePlaceOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deliveryDetails.name || !deliveryDetails.phone || !deliveryDetails.address) return;
-    await placeOrder(deliveryDetails, paymentMethod);
+    const finalDetails: CustomerDeliveryDetails = {
+      name: deliveryDetails.name || user?.name || 'Rahul Sharma',
+      phone: deliveryDetails.phone || user?.phone || '+91 98765 43210',
+      address: deliveryDetails.address || user?.address || 'Boys Hostel B, Campus',
+      hostelOrPg: deliveryDetails.hostelOrPg || user?.hostelOrPg || 'Boys Hostel B',
+      roomNumber: deliveryDetails.roomNumber || user?.roomNumber || '204',
+      notes: deliveryDetails.notes || '',
+    };
+    await placeOrder(finalDetails, paymentMethod);
   };
 
   return (
@@ -146,56 +167,43 @@ export const CheckoutModal: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-600 mb-1">
-                  Delivery Instruction / Note (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={deliveryDetails.notes || ''}
-                  onChange={(e) => setDeliveryDetails({ ...deliveryDetails, notes: e.target.value })}
-                  placeholder="e.g. Call when reaching gate, leave with guard"
-                  className="w-full px-3 py-1.5 text-xs rounded-xl bg-white border border-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
-                />
-              </div>
             </div>
 
             {/* 2. Order Items Review */}
-            <div className="bg-white rounded-2xl p-4 border border-stone-200 space-y-2">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-stone-700 block mb-2">
-                2. Order Items ({cart.items.length})
-              </span>
-              <div className="divide-y divide-stone-100 max-h-36 overflow-y-auto pr-1">
-                {cart.items.map(({ item, quantity }) => (
-                  <div key={item.id} className="py-1.5 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="font-bold text-stone-800">{item.name}</span>
-                      <span className="text-stone-400">× {quantity}</span>
+            <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2">
+              <div className="text-xs font-extrabold uppercase tracking-wider text-stone-700">
+                2. Order Items ({cart.items.reduce((acc, curr) => acc + curr.quantity, 0)})
+              </div>
+              <div className="divide-y divide-stone-200 max-h-36 overflow-y-auto pr-1">
+                {cart.items.map((ci) => (
+                  <div key={ci.item.id} className="py-2 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-stone-900">{ci.item.name}</span>
+                      <span className="text-stone-400">× {ci.quantity}</span>
                     </div>
-                    <span className="font-bold text-stone-900">₹{item.price * quantity}</span>
+                    <span className="font-extrabold text-stone-900">₹{ci.item.price * ci.quantity}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* 3. Payment Method Selection (Extensible architecture) */}
-            <div className="bg-white rounded-2xl p-4 border border-stone-200 space-y-3">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-stone-700 block">
+            {/* 3. Payment Method Selection */}
+            <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-3">
+              <div className="text-xs font-extrabold uppercase tracking-wider text-stone-700">
                 3. Payment Method
-              </span>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Cash on Delivery (Active MVP) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Cash on Delivery Option */}
                 <label
                   onClick={() => setPaymentMethod('Cash on Delivery')}
-                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                     paymentMethod === 'Cash on Delivery'
-                      ? 'border-amber-500 bg-amber-50/50 shadow-xs'
-                      : 'border-stone-200 hover:bg-stone-50'
+                      ? 'border-amber-600 bg-amber-50/60 ring-2 ring-amber-500/20'
+                      : 'border-stone-200 bg-white hover:border-stone-300'
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
                     <Banknote className="w-4 h-4" />
                   </div>
                   <div className="flex-1 min-w-0">
