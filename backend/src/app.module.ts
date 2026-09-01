@@ -4,6 +4,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 import { APP_GUARD } from '@nestjs/core';
 
+import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -84,6 +85,7 @@ import { AdminsModule } from './admins/admins.module';
     IssuesModule,
     AdminsModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,
