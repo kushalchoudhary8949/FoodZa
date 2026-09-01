@@ -73,8 +73,8 @@ export class ManagerApiClient {
   }
 
   // ── Order Workflow ──
-  static async getStoreOrders() {
-    return this.request<any[]>('/orders/store-orders');
+  static async getStoreOrders(storeId?: string) {
+    return this.request<any[]>(`/orders/store-orders${storeId ? `?storeId=${storeId}` : ''}`);
   }
 
   static async acceptOrder(orderId: string, reason?: string) {

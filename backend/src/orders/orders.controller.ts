@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Param, Body, Query, ForbiddenException } from '@nestjs/common';
 import { UserRole, OrderStatus } from '@prisma/client';
 import { OrdersService } from './orders.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CreateOrderDto, ManagerActionDto, AdminActionDto } from './dto/order.dto';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post()
   @Roles(UserRole.CUSTOMER)
@@ -22,12 +26,22 @@ export class OrdersController {
   }
 
   @Get('store-orders')
-  @Roles(UserRole.MANAGER)
+  @Roles(UserRole.MANAGER, UserRole.ADMIN)
   async getStoreOrders(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: OrderStatus,
+    @Query('storeId') storeId?: string,
   ) {
-    return this.ordersService.findStoreOrders(user.restaurantId!, status);
+    let restaurantId = user.restaurantId || storeId;
+    if (!restaurantId && user.managerId) {
+      const mgr = await this.prisma.manager.findUnique({ where: { id: user.managerId } });
+      restaurantId = mgr?.restaurantId;
+    }
+    if (!restaurantId) {
+      const defaultRest = await this.prisma.restaurant.findFirst({ where: { isActive: true } });
+      restaurantId = defaultRest?.id;
+    }
+    return this.ordersService.findStoreOrders(restaurantId || '', status);
   }
 
   @Get('admin/all')

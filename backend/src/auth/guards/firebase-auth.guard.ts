@@ -116,11 +116,28 @@ export class FirebaseAuthGuard implements CanActivate {
     // In dev mode with skipFirebase, auto-provision user if missing
     if (!user && skipFirebase) {
       this.logger.log(`Dev Mode: Auto-provisioning missing user for firebaseUid: ${firebaseUid}`);
-      const isDevAdmin = firebaseUid.includes('admin');
-      const isDevManager = firebaseUid.includes('mgr') || firebaseUid.includes('manager');
-      const isDevPartner = firebaseUid.includes('dp') || firebaseUid.includes('partner');
+      const isDevAdmin = firebaseUid.includes('admin') || firebaseUid.includes('ADMIN');
+      const isDevManager = firebaseUid.includes('mgr') || firebaseUid.includes('manager') || firebaseUid.includes('MGR');
+      const isDevPartner = firebaseUid.includes('dp') || firebaseUid.includes('partner') || firebaseUid.includes('DP');
 
       const role: UserRole = isDevAdmin ? UserRole.ADMIN : isDevManager ? UserRole.MANAGER : isDevPartner ? UserRole.DELIVERY_PARTNER : UserRole.CUSTOMER;
+
+      // If manager, resolve appropriate restaurant
+      let restaurantIdToLink: string | undefined;
+      if (isDevManager) {
+        let matchedRest = null;
+        if (firebaseUid.toLowerCase().includes('kfc')) {
+          matchedRest = await this.prisma.restaurant.findFirst({ where: { name: { contains: 'KFC', mode: 'insensitive' } } });
+        } else if (firebaseUid.toLowerCase().includes('pizza')) {
+          matchedRest = await this.prisma.restaurant.findFirst({ where: { name: { contains: 'Pizza', mode: 'insensitive' } } });
+        } else if (firebaseUid.toLowerCase().includes('subway')) {
+          matchedRest = await this.prisma.restaurant.findFirst({ where: { name: { contains: 'Subway', mode: 'insensitive' } } });
+        }
+        if (!matchedRest) {
+          matchedRest = await this.prisma.restaurant.findFirst({ where: { isActive: true } });
+        }
+        restaurantIdToLink = matchedRest?.id;
+      }
 
       user = await this.prisma.user.create({
         data: {
@@ -131,6 +148,7 @@ export class FirebaseAuthGuard implements CanActivate {
           role,
           customer: role === UserRole.CUSTOMER ? { create: { name: firebaseUid, phone: '+91 98000 00000' } } : undefined,
           deliveryPartner: role === UserRole.DELIVERY_PARTNER ? { create: { phone: '+91 98000 00000' } } : undefined,
+          manager: (role === UserRole.MANAGER && restaurantIdToLink) ? { create: { restaurantId: restaurantIdToLink } } : undefined,
         },
         include: {
           manager: { select: { id: true, restaurantId: true } },
@@ -138,6 +156,21 @@ export class FirebaseAuthGuard implements CanActivate {
           deliveryPartner: { select: { id: true } },
         },
       });
+    }
+
+    // If user exists as MANAGER but has no Manager record attached, link them now
+    if (user && user.role === UserRole.MANAGER && !user.manager) {
+      const defaultRest = await this.prisma.restaurant.findFirst({ where: { isActive: true } });
+      if (defaultRest) {
+        const mgr = await this.prisma.manager.create({
+          data: {
+            userId: user.id,
+            restaurantId: defaultRest.id,
+          },
+          select: { id: true, restaurantId: true },
+        });
+        user.manager = mgr;
+      }
     }
 
     if (!user) {

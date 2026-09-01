@@ -147,8 +147,9 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setAllStores(mappedStores);
       }
 
-      // 2. Orders
-      const ordersRes: any = await ManagerApiClient.getStoreOrders();
+      // 2. Orders for current store
+      const storeIdToFetch = session?.storeId || allStores[0]?.id;
+      const ordersRes: any = await ManagerApiClient.getStoreOrders(storeIdToFetch);
       if (Array.isArray(ordersRes)) {
         const mappedOrders: Order[] = ordersRes.map((o: any) => ({
           id: o.id,
@@ -183,7 +184,12 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
           })),
           timeoutSeconds: 60,
         }));
-        setAllOrders(mappedOrders);
+        setAllOrders((prev) => {
+          // Merge preserving any unsynced local orders
+          const fetchedIds = new Set(mappedOrders.map((m) => m.id));
+          const localOnly = prev.filter((p) => !fetchedIds.has(p.id) && p.status === 'WAITING_FOR_MANAGER');
+          return [...localOnly, ...mappedOrders];
+        });
 
         // Check for pending order
         const pending = mappedOrders.find((o) => o.status === 'WAITING_FOR_MANAGER');
@@ -195,7 +201,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } catch (err: any) {
       console.warn('Backend sync failed, using local storage cache:', err.message);
     }
-  }, [incomingOrderId]);
+  }, [session, allStores, incomingOrderId]);
 
   useEffect(() => {
     refreshBackendData();
@@ -209,11 +215,63 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Connect Socket.IO for real-time new orders
   useEffect(() => {
     if (!currentStore) return;
+    
+    // Join current store room and fallback to all known store rooms
     joinStoreRoom(currentStore.id);
+    allStores.forEach((s) => joinStoreRoom(s.id));
 
-    const unsubNew = subscribeToNewOrders((newOrderData) => {
-      refreshBackendData();
+    const unsubNew = subscribeToNewOrders((newOrderData: any) => {
+      console.log('Incoming order received via Socket.IO:', newOrderData);
+      
+      const orderId = newOrderData?.id || newOrderData?.orderId;
+      if (orderId) {
+        const mappedIncoming: Order = {
+          id: orderId,
+          storeId: newOrderData.restaurantId || currentStore.id,
+          customer: {
+            id: newOrderData.customerId || 'cust-1',
+            name: newOrderData.customer?.name || newOrderData.customerName || 'Campus Student',
+            phone: newOrderData.customer?.phone || '+91 98765 43210',
+            deliveryAddress: newOrderData.deliveryAddress || 'Hostel B, Room 204',
+            hostelOrPg: newOrderData.hostelOrPgName || 'Hostel B',
+            roomNumber: newOrderData.roomNumber || '204',
+          },
+          items: (newOrderData.orderItems || newOrderData.items || []).map((i: any) => ({
+            id: i.id || i.menuItemId || `itm-${Math.random()}`,
+            name: i.itemNameSnapshot || i.name || 'Menu Item',
+            price: Number(i.unitPrice || i.price || 0),
+            quantity: i.quantity || 1,
+            isVeg: true,
+          })),
+          subtotal: Number(newOrderData.subtotal || newOrderData.totalAmount || 0),
+          deliveryFee: Number(newOrderData.deliveryFee || 30),
+          tax: 0,
+          total: Number(newOrderData.totalAmount || newOrderData.total || 0),
+          paymentMethod: newOrderData.paymentMethod === 'CASH_ON_DELIVERY' ? 'CASH_ON_DELIVERY' : 'UPI',
+          paymentStatus: newOrderData.paymentStatus || 'PENDING',
+          status: 'WAITING_FOR_MANAGER',
+          createdAt: newOrderData.createdAt || new Date().toISOString(),
+          statusHistory: [
+            {
+              status: 'WAITING_FOR_MANAGER',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              note: 'Order Placed',
+            },
+          ],
+          timeoutSeconds: 60,
+        };
+
+        setAllOrders((prev) => {
+          const exists = prev.some((o) => o.id === orderId);
+          return exists ? prev.map((o) => (o.id === orderId ? mappedIncoming : o)) : [mappedIncoming, ...prev];
+        });
+
+        setIncomingOrderId(orderId);
+        setIncomingOrderTimeRemaining(60);
+      }
+
       soundAlerts.playNewOrderAlert();
+      refreshBackendData();
     });
 
     const unsubUpd = subscribeToOrderUpdates(() => {
@@ -224,7 +282,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       unsubNew();
       unsubUpd();
     };
-  }, [currentStore, refreshBackendData]);
+  }, [currentStore, allStores, refreshBackendData]);
 
   const storeOrders = currentStore ? allOrders.filter((o) => o.storeId === currentStore.id) : allOrders;
   const storeFoodItems = currentStore ? allFoodItems.filter((i) => i.storeId === currentStore.id) : allFoodItems;
