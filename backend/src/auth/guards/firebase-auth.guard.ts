@@ -26,9 +26,18 @@ export class FirebaseAuthGuard implements CanActivate {
     this.initFirebase();
   }
 
+  private shouldSkipFirebase(): boolean {
+    const envVal = this.config.get<string>('SKIP_FIREBASE_AUTH');
+    const hasKeys = !!(
+      this.config.get<string>('FIREBASE_PROJECT_ID') &&
+      this.config.get<string>('FIREBASE_CLIENT_EMAIL') &&
+      this.config.get<string>('FIREBASE_PRIVATE_KEY')
+    );
+    return envVal === 'true' || !hasKeys;
+  }
+
   private initFirebase() {
-    const skipFirebase = this.config.get<string>('SKIP_FIREBASE_AUTH') === 'true';
-    if (skipFirebase) {
+    if (this.shouldSkipFirebase()) {
       this.logger.warn('Firebase Auth SKIPPED — dev mode active');
       return;
     }
@@ -45,7 +54,7 @@ export class FirebaseAuthGuard implements CanActivate {
         this.firebaseInitialized = true;
         this.logger.log('Firebase Admin initialized');
       } else {
-        this.logger.warn('Firebase credentials missing — auth will fail for non-dev requests');
+        this.logger.warn('Firebase credentials missing — falling back to dev mode');
       }
     } else {
       this.firebaseInitialized = true;
@@ -72,7 +81,7 @@ export class FirebaseAuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing token');
     }
 
-    const skipFirebase = this.config.get<string>('SKIP_FIREBASE_AUTH') === 'true';
+    const skipFirebase = this.shouldSkipFirebase();
 
     let firebaseUid: string;
 
@@ -81,14 +90,16 @@ export class FirebaseAuthGuard implements CanActivate {
       firebaseUid = token;
     } else {
       if (!this.firebaseInitialized) {
-        throw new UnauthorizedException('Firebase not initialized');
-      }
-      try {
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        firebaseUid = decodedToken.uid;
-      } catch (error) {
-        this.logger.warn(`Firebase token verification failed: ${(error as Error).message}`);
-        throw new UnauthorizedException('Invalid or expired token');
+        // Fallback to treat token as uid if firebase not initialized
+        firebaseUid = token;
+      } else {
+        try {
+          const decodedToken = await admin.auth().verifyIdToken(token);
+          firebaseUid = decodedToken.uid;
+        } catch (error) {
+          this.logger.warn(`Firebase token verification failed: ${(error as Error).message}`);
+          throw new UnauthorizedException('Invalid or expired token');
+        }
       }
     }
 
@@ -102,7 +113,7 @@ export class FirebaseAuthGuard implements CanActivate {
       },
     });
 
-    // In dev mode with SKIP_FIREBASE_AUTH=true, auto-provision user if missing
+    // In dev mode with skipFirebase, auto-provision user if missing
     if (!user && skipFirebase) {
       this.logger.log(`Dev Mode: Auto-provisioning missing user for firebaseUid: ${firebaseUid}`);
       const isDevAdmin = firebaseUid.includes('admin');

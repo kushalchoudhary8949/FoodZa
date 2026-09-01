@@ -13,7 +13,6 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   const port = process.env.PORT || configService.get<number>('PORT', 3000);
-  const corsOrigins = configService.get<string>('CORS_ORIGINS', '*');
 
   // Security
   app.use(
@@ -22,10 +21,14 @@ async function bootstrap() {
     }),
   );
 
-  // CORS
+  // Global CORS configuration allowing all origins (including Vercel frontends)
   app.enableCors({
-    origin: corsOrigins === '*' ? true : corsOrigins.split(',').map((o) => o.trim()),
+    origin: (_origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      callback(null, true);
+    },
     credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type,Accept,Authorization',
   });
 
   // Global pipes
