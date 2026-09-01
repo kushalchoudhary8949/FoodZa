@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrderStatus } from '@prisma/client';
 
 export const ORDER_TIMEOUT_QUEUE = 'order-timeout';
@@ -11,7 +12,10 @@ export const MANAGER_TIMEOUT_JOB = 'manager-timeout';
 export class OrderTimeoutProcessor extends WorkerHost {
   private readonly logger = new Logger(OrderTimeoutProcessor.name);
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtimeGateway: RealtimeGateway,
+  ) {
     super();
   }
 
@@ -22,6 +26,11 @@ export class OrderTimeoutProcessor extends WorkerHost {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
+        include: {
+          orderItems: true,
+          restaurant: { select: { id: true, name: true } },
+          customer: { select: { name: true, phone: true } },
+        },
       });
 
       if (!order) {
@@ -51,8 +60,27 @@ export class OrderTimeoutProcessor extends WorkerHost {
           },
         });
 
-        // Create Admin notification
-        // Note: Realtime gateway will also emit events if connected
+        // Emit Socket.IO events: timeout alert to admin + order update to all rooms
+        try {
+          this.realtimeGateway.emitManagerTimeoutToAdmin({
+            orderId: order.id,
+            orderNumber: (order as any).orderNumber || order.id,
+            restaurantId: order.restaurantId,
+            restaurantName: order.restaurant?.name || 'Restaurant',
+            customerName: order.customer?.name || 'Customer',
+            totalAmount: Number(order.totalAmount),
+            items: order.orderItems,
+            status: 'WAITING_FOR_ADMIN',
+          });
+          this.realtimeGateway.emitOrderUpdate(
+            order.id,
+            order.restaurantId,
+            'WAITING_FOR_ADMIN',
+            { ...order, status: OrderStatus.WAITING_FOR_ADMIN },
+          );
+        } catch (socketErr: any) {
+          this.logger.warn(`Socket.IO emit failed for timeout order ${orderId}: ${socketErr.message}`);
+        }
       } else {
         this.logger.log(`Order ${orderId} status is ${order.status}, timeout ignored.`);
       }

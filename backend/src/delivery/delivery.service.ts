@@ -11,6 +11,7 @@ import { DeliveryAssignmentService } from './delivery-assignment.service';
 import { OtpService } from './otp.service';
 import { OnlineStatus, DeliveryRequestStatus, OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class DeliveryService {
@@ -20,13 +21,14 @@ export class DeliveryService {
     private readonly prisma: PrismaService,
     private readonly assignmentService: DeliveryAssignmentService,
     private readonly otpService: OtpService,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   /**
    * Delivery Partner accepts a delivery request (Race condition safe)
    */
   async acceptRequest(requestId: string, partnerId: string, user: AuthenticatedUser) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Fetch request with pessimistic check
       const request = await tx.deliveryRequest.findUnique({
         where: { id: requestId },
@@ -103,6 +105,14 @@ export class DeliveryService {
 
       return { order: updatedOrder, otp: rawOtp };
     });
+
+    // Emit real-time update for delivery assigned
+    try {
+      const order = result.order;
+      this.realtimeGateway.emitOrderUpdate(requestId.includes('-') ? order.id : requestId, order.restaurantId || '', 'DELIVERY_ASSIGNED', order);
+    } catch {}
+
+    return result;
   }
 
   /**
@@ -148,7 +158,7 @@ export class DeliveryService {
       throw new BadRequestException('Order is not in DELIVERY_ASSIGNED state');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id: orderId },
         data: {
@@ -169,6 +179,13 @@ export class DeliveryService {
 
       return updated;
     });
+
+    // Emit real-time update
+    try {
+      this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId || '', 'PICKED_UP', result);
+    } catch {}
+
+    return result;
   }
 
   /**
@@ -181,7 +198,7 @@ export class DeliveryService {
       throw new BadRequestException('Order is not in PICKED_UP state');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id: orderId },
         data: {
@@ -201,6 +218,13 @@ export class DeliveryService {
 
       return updated;
     });
+
+    // Emit real-time update
+    try {
+      this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId || '', 'OUT_FOR_DELIVERY', result);
+    } catch {}
+
+    return result;
   }
 
   /**
@@ -264,7 +288,7 @@ export class DeliveryService {
 
     const deliveryEarning = 40; // Flat delivery pay per order for MVP
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Update Order -> DELIVERED
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
@@ -298,6 +322,13 @@ export class DeliveryService {
 
       return updatedOrder;
     });
+
+    // Emit real-time update for order delivered
+    try {
+      this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId || '', 'DELIVERED', result);
+    } catch {}
+
+    return result;
   }
 
   // ── Partner Profile & Online Toggle ──

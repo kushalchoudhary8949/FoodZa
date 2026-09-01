@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE_URL = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-backend.onrender.com/api');
 
 export class AdminApiClient {
   private static token: string | null = localStorage.getItem('fc_admin_token') || 'usr_admin_01';
@@ -26,19 +27,32 @@ export class AdminApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    const json = await response.json().catch(() => ({}));
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorMsg = json.message || json.error || `HTTP ${response.status}`;
-      throw new Error(errorMsg);
+      const json = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const errorMsg = json.message || json.error || `HTTP ${response.status}`;
+        throw new Error(errorMsg);
+      }
+
+      return (json.data !== undefined ? json.data : json) as T;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error('Server response timed out after 6 seconds');
+      }
+      throw err;
     }
-
-    return (json.data !== undefined ? json.data : json) as T;
   }
 
   // ── Dashboard Metrics ──

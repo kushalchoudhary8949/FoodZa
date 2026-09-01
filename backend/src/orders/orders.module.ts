@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { OrderTimeoutProcessor, ORDER_TIMEOUT_QUEUE } from './order-timeout.processor';
+import { DeliveryAssignmentService } from '../delivery/delivery-assignment.service';
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { OrderTimeoutProcessor, ORDER_TIMEOUT_QUEUE } from './order-timeout.proc
     }),
   ],
   controllers: [OrdersController],
-  providers: [OrdersService, OrderTimeoutProcessor],
+  providers: [OrdersService, OrderTimeoutProcessor, DeliveryAssignmentService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

@@ -10,6 +10,8 @@ import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { OrderStatus, PaymentStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { DeliveryAssignmentService } from '../delivery/delivery-assignment.service';
 import { CreateOrderDto, ManagerActionDto, AdminActionDto } from './dto/order.dto';
 import { isValidTransition } from './order-state-machine';
 import { ORDER_TIMEOUT_QUEUE, MANAGER_TIMEOUT_JOB } from './order-timeout.processor';
@@ -22,6 +24,8 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly realtimeGateway: RealtimeGateway,
+    private readonly deliveryAssignment: DeliveryAssignmentService,
     @InjectQueue(ORDER_TIMEOUT_QUEUE) private readonly timeoutQueue: Queue,
   ) {}
 
@@ -240,6 +244,14 @@ export class OrdersService {
       this.logger.warn(`Could not schedule BullMQ timeout job for order ${order.id}: ${queueErr.message}`);
     }
 
+    // Emit Socket.IO events: new order to store manager + order update to admin
+    try {
+      this.realtimeGateway.emitNewOrderToStore(order.restaurantId, order);
+      this.realtimeGateway.emitOrderUpdate(order.id, order.restaurantId, order.status, order);
+    } catch (socketErr: any) {
+      this.logger.warn(`Socket.IO emit failed for new order ${order.id}: ${socketErr.message}`);
+    }
+
     return order;
   }
 
@@ -258,8 +270,8 @@ export class OrdersService {
     // Cancel timeout job
     await this.cancelTimeoutJob(orderId);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.MANAGER_ACCEPTED,
@@ -278,8 +290,13 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    // Emit real-time update to all rooms (informational notification to admin)
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'MANAGER_ACCEPTED', updated);
+
+    return updated;
   }
 
   /**
@@ -297,8 +314,8 @@ export class OrdersService {
     // Cancel timeout job
     await this.cancelTimeoutJob(orderId);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.MANAGER_REJECTED,
@@ -317,8 +334,13 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    // Emit real-time update (informational notification to admin, rejection to customer)
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'MANAGER_REJECTED', updated);
+
+    return updated;
   }
 
   /**
@@ -329,8 +351,8 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.ADMIN_ACCEPTED);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.ADMIN_ACCEPTED,
@@ -349,8 +371,20 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    // Emit real-time update
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'ADMIN_ACCEPTED', updated);
+
+    // Admin accepted a timed-out order → auto-transition to PREPARING and trigger delivery assignment
+    try {
+      await this.deliveryAssignment.assignDelivery(orderId);
+    } catch (assignErr: any) {
+      this.logger.warn(`Delivery assignment after admin accept failed for ${orderId}: ${assignErr.message}`);
+    }
+
+    return updated;
   }
 
   /**
@@ -361,8 +395,8 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.ADMIN_REJECTED);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.ADMIN_REJECTED,
@@ -381,8 +415,13 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    // Emit real-time update (customer notified of rejection)
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'ADMIN_REJECTED', updated);
+
+    return updated;
   }
 
   /**
@@ -396,8 +435,8 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.PREPARING);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.PREPARING,
@@ -414,8 +453,12 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'PREPARING', updated);
+
+    return updated;
   }
 
   /**
@@ -429,8 +472,8 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.READY_FOR_PICKUP);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.READY_FOR_PICKUP,
@@ -448,8 +491,19 @@ export class OrdersService {
         },
       });
 
-      return updated;
+      return result;
     });
+
+    this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'READY_FOR_PICKUP', updated);
+
+    // Auto-trigger delivery partner assignment when food is ready
+    try {
+      await this.deliveryAssignment.assignDelivery(orderId);
+    } catch (assignErr: any) {
+      this.logger.warn(`Delivery assignment failed for ${orderId}: ${assignErr.message}`);
+    }
+
+    return updated;
   }
 
   // ── Queries ──
