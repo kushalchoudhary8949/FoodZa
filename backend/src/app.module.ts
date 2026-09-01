@@ -62,6 +62,7 @@ import { AdminsModule } from './admins/admins.module';
             connectTimeout: 5000,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
+            retryStrategy: (times) => Math.min(times * 100, 3000),
             tls: isTls ? { rejectUnauthorized: false, servername: host } : undefined,
           },
         };
