@@ -58,9 +58,11 @@ import { AdminsModule } from './admins/admins.module';
             host,
             port,
             password,
+            family: 4,
+            connectTimeout: 5000,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
-            tls: isTls ? { rejectUnauthorized: false } : undefined,
+            tls: isTls ? { rejectUnauthorized: false, servername: host } : undefined,
           },
         };
       },
