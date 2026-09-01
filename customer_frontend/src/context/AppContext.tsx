@@ -326,55 +326,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = (phone: string, _otpCode?: string): boolean => {
     const cleanPhone = phone.replace(/\D/g, '');
-    const firebaseUid = cleanPhone.includes('9876543210') ? 'usr_student_102' : `dev_customer_${cleanPhone}`;
+    const firebaseUid = cleanPhone.includes('9876543210') ? 'usr_student_101' : `dev_customer_${cleanPhone}`;
     ApiClient.setToken(firebaseUid);
 
+    // Synchronously set user state so UI updates IMMEDIATELY
+    const initialUser: UserProfile = {
+      id: firebaseUid,
+      name: cleanPhone.includes('9876543210') ? 'Rahul Sharma' : 'Student User',
+      phone: phone || '+91 98765 43210',
+      address: 'Boys Hostel B (Aryabhatta), Room 204',
+      hostelOrPg: 'Boys Hostel B',
+      roomNumber: '204',
+      createdAt: new Date().toISOString(),
+    };
+    setUser(initialUser);
+    showToast(`Welcome back, ${initialUser.name}!`, 'success');
+
+    // Asynchronously fetch/sync server profile
     ApiClient.getProfile()
       .then((userProfile: any) => {
-        const loggedUser: UserProfile = {
-          id: userProfile.id,
-          name: userProfile.name,
-          phone: userProfile.phone || phone,
-          address: userProfile.customer?.defaultAddress || 'Hostel B, Campus',
-          hostelOrPg: userProfile.customer?.hostelOrPgName || 'Hostel B',
-          roomNumber: userProfile.customer?.roomNumber || '204',
-          createdAt: userProfile.createdAt,
-        };
-        setUser(loggedUser);
-        showToast(`Welcome back, ${loggedUser.name}!`, 'success');
+        if (userProfile) {
+          setUser((prev) => ({
+            ...prev!,
+            id: userProfile.id || firebaseUid,
+            name: userProfile.name || prev?.name || 'Student User',
+            phone: userProfile.phone || prev?.phone || phone,
+            address: userProfile.customer?.defaultAddress || prev?.address || 'Hostel B',
+            hostelOrPg: userProfile.customer?.hostelOrPgName || prev?.hostelOrPg || '',
+            roomNumber: userProfile.customer?.roomNumber || prev?.roomNumber || '',
+          }));
+        }
       })
       .catch(() => {
-        // Register if user doesn't exist yet
         ApiClient.register({
           firebaseUid,
-          name: 'Student User',
-          phone,
-        })
-          .then((newUser: any) => {
-            const loggedUser: UserProfile = {
-              id: newUser.id || firebaseUid,
-              name: newUser.name || 'Student User',
-              phone: newUser.phone || phone,
-              address: 'Hostel B, Campus',
-              createdAt: newUser.createdAt || new Date().toISOString(),
-            };
-            setUser(loggedUser);
-            showToast(`Welcome, ${loggedUser.name}!`, 'success');
-          })
-          .catch(() => {
-            // Local fallback login so user is never blocked
-            const fallbackUser: UserProfile = {
-              id: firebaseUid,
-              name: 'Student User',
-              phone,
-              address: 'Hostel B, Campus',
-              hostelOrPg: 'Boys Hostel B',
-              roomNumber: '204',
-              createdAt: new Date().toISOString(),
-            };
-            setUser(fallbackUser);
-            showToast(`Welcome back!`, 'success');
-          });
+          name: initialUser.name,
+          phone: initialUser.phone,
+        }).catch(() => {});
       });
 
     closeAuthModal();
@@ -387,40 +375,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const firebaseUid = `dev_customer_${cleanPhone}`;
     ApiClient.setToken(firebaseUid);
 
+    // Synchronously set user state so UI updates IMMEDIATELY
+    const newUser: UserProfile = {
+      id: firebaseUid,
+      name: data.name,
+      phone: data.phone,
+      address: data.address,
+      hostelOrPg: data.hostelOrPg || '',
+      roomNumber: data.roomNumber || '',
+      createdAt: new Date().toISOString(),
+    };
+    setUser(newUser);
+    showToast(`Account created for ${newUser.name}!`, 'success');
+
+    // Register with backend in background
     ApiClient.register({
       firebaseUid,
       name: data.name,
       phone: data.phone,
       hostelOrPgName: data.hostelOrPg,
       roomNumber: data.roomNumber,
-    })
-      .then((userProfile: any) => {
-        const newUser: UserProfile = {
-          id: userProfile.id,
-          name: userProfile.name,
-          phone: userProfile.phone,
-          address: data.address,
-          hostelOrPg: data.hostelOrPg || '',
-          roomNumber: data.roomNumber || '',
-          createdAt: userProfile.createdAt,
-        };
-        setUser(newUser);
-        showToast(`Account created for ${newUser.name}!`, 'success');
-      })
-      .catch(() => {
-        // Fallback profile if server registration was already completed or skipped
-        const newUser: UserProfile = {
-          id: firebaseUid,
-          name: data.name,
-          phone: data.phone,
-          address: data.address,
-          hostelOrPg: data.hostelOrPg || '',
-          roomNumber: data.roomNumber || '',
-          createdAt: new Date().toISOString(),
-        };
-        setUser(newUser);
-        showToast(`Account ready for ${newUser.name}!`, 'success');
-      });
+    }).catch(() => {});
 
     closeAuthModal();
     if (pendingAuthAction) pendingAuthAction();
