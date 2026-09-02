@@ -148,7 +148,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       // 2. Orders for current store
-      const storeIdToFetch = session?.storeId || allStores[0]?.id;
+      const storeIdToFetch = session?.storeId || (Array.isArray(storesRes) && storesRes[0]?.id) || 'cmthk0r6e000qvnlem4n66bzb';
       const ordersRes: any = await ManagerApiClient.getStoreOrders(storeIdToFetch);
       if (Array.isArray(ordersRes)) {
         const mappedOrders: Order[] = ordersRes.map((o: any) => ({
@@ -193,15 +193,15 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
         // Check for pending order
         const pending = mappedOrders.find((o) => o.status === 'WAITING_FOR_MANAGER');
-        if (pending && !incomingOrderId) {
-          setIncomingOrderId(pending.id);
-          setIncomingOrderTimeRemaining(60);
+        if (pending) {
+          setIncomingOrderId((prevId) => prevId || pending.id);
+          setIncomingOrderTimeRemaining((prevTime) => prevTime || 60);
         }
       }
     } catch (err: any) {
       console.warn('Backend sync failed, using local storage cache:', err.message);
     }
-  }, [session, allStores, incomingOrderId]);
+  }, [session?.managerId, session?.storeId]);
 
   useEffect(() => {
     refreshBackendData();
@@ -209,7 +209,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Current Manager and Store
   const currentManager = session ? allManagers.find((m) => m.id === session.managerId && m.isActive) || allManagers[0] : allManagers[0];
-  const currentStore = currentManager ? allStores.find((s) => s.id === currentManager.storeId) || allStores[0] : allStores[0];
+  const currentStore = currentManager ? (allStores.find((s) => s.id === currentManager.storeId) || allStores.find((s) => s.id === session?.storeId) || allStores[0]) : allStores[0];
   const isAuthenticated = Boolean(session || currentManager);
 
   // Connect Socket.IO for real-time new orders
@@ -218,6 +218,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     // Join current store room and fallback to all known store rooms
     joinStoreRoom(currentStore.id);
+    joinStoreRoom('cmthk0r6e000qvnlem4n66bzb');
     allStores.forEach((s) => joinStoreRoom(s.id));
 
     const unsubNew = subscribeToNewOrders((newOrderData: any) => {
@@ -284,7 +285,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [currentStore, allStores, refreshBackendData]);
 
-  const storeOrders = currentStore ? allOrders.filter((o) => o.storeId === currentStore.id) : allOrders;
+  const storeOrders = currentStore ? allOrders.filter((o) => o.storeId === currentStore.id || (currentStore.id === 'cmthk0r6e000qvnlem4n66bzb' && (!o.storeId || o.storeId === 'store-kfc-01'))) : allOrders;
   const storeFoodItems = currentStore ? allFoodItems.filter((i) => i.storeId === currentStore.id) : allFoodItems;
   const storeCategories = currentStore ? allCategories.filter((c) => c.storeId === currentStore.id) : allCategories;
   const storeIssues = currentStore ? allIssues.filter((i) => i.storeId === currentStore.id) : allIssues;

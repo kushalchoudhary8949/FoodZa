@@ -131,9 +131,9 @@ export const storage = {
   getActiveSession(): { managerId: string; storeId: string } | null {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.ACTIVE_SESSION);
-      return data ? JSON.parse(data) : { managerId: 'MGR-KFC-101', storeId: 'store-kfc-01' };
+      return data ? JSON.parse(data) : { managerId: 'MGR-KFC-101', storeId: 'cmthk0r6e000qvnlem4n66bzb' };
     } catch {
-      return { managerId: 'MGR-KFC-101', storeId: 'store-kfc-01' };
+      return { managerId: 'MGR-KFC-101', storeId: 'cmthk0r6e000qvnlem4n66bzb' };
     }
   },
   saveActiveSession(session: { managerId: string; storeId: string } | null) {
