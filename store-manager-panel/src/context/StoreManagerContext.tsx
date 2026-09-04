@@ -212,23 +212,32 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const currentStore = currentManager ? (allStores.find((s) => s.id === currentManager.storeId) || allStores.find((s) => s.id === session?.storeId) || allStores[0]) : allStores[0];
   const isAuthenticated = Boolean(session || currentManager);
 
-  // Connect Socket.IO for real-time new orders
+  // Keep a stable reference to the latest refresh function so the socket
+  // listeners never need to re-subscribe (prevents missing real-time orders).
+  const refreshRef = useRef(refreshBackendData);
+  refreshRef.current = refreshBackendData;
+
+  // Connect Socket.IO for real-time new orders.
+  // Deliberately depends ONLY on the stable currentStore id so that the
+  // listeners are never torn down/re-created when unrelated state changes
+  // (e.g. allStores and refreshBackendData being recreated on every poll).
   useEffect(() => {
     if (!currentStore) return;
-    
+    const storeId = currentStore.id;
+
     // Join current store room and fallback to all known store rooms
-    joinStoreRoom(currentStore.id);
+    joinStoreRoom(storeId);
     joinStoreRoom('cmthk0r6e000qvnlem4n66bzb');
-    allStores.forEach((s) => joinStoreRoom(s.id));
+    allStores.forEach((s) => s.id && joinStoreRoom(s.id));
 
     const unsubNew = subscribeToNewOrders((newOrderData: any) => {
       console.log('Incoming order received via Socket.IO:', newOrderData);
-      
+
       const orderId = newOrderData?.id || newOrderData?.orderId;
       if (orderId) {
         const mappedIncoming: Order = {
           id: orderId,
-          storeId: newOrderData.restaurantId || currentStore.id,
+          storeId: newOrderData.restaurantId || storeId,
           customer: {
             id: newOrderData.customerId || 'cust-1',
             name: newOrderData.customer?.name || newOrderData.customerName || 'Campus Student',
@@ -272,18 +281,18 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       soundAlerts.playNewOrderAlert();
-      refreshBackendData();
+      refreshRef.current();
     });
 
     const unsubUpd = subscribeToOrderUpdates(() => {
-      refreshBackendData();
+      refreshRef.current();
     });
 
     return () => {
       unsubNew();
       unsubUpd();
     };
-  }, [currentStore, allStores, refreshBackendData]);
+  }, [currentStore?.id]);
 
   const storeOrders = currentStore ? allOrders.filter((o) => o.storeId === currentStore.id || (currentStore.id === 'cmthk0r6e000qvnlem4n66bzb' && (!o.storeId || o.storeId === 'store-kfc-01'))) : allOrders;
   const storeFoodItems = currentStore ? allFoodItems.filter((i) => i.storeId === currentStore.id) : allFoodItems;
