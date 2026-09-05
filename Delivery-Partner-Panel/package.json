@@ -40,5 +40,6 @@
     "esbuild": true,
     "protobufjs": true,
     "@google/genai": true
-  }
+  },
+  "canvas-confetti": "^5.0.0"
 }
