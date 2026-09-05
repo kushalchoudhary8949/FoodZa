@@ -135,7 +135,7 @@ export default function App() {
   // Handler: Accept Incoming Delivery Request (Section 3 & 4)
   const handleAcceptDelivery = async (orderId: string) => {
     try {
-      const res = await api.acceptDelivery(orderId);
+      const res = await api.acceptDelivery(orderId, incomingRequest);
       soundManager.playSuccessSound();
       setIncomingRequest(null);
       setActiveOrder(res.order);

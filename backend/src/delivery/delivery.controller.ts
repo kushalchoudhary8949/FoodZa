@@ -40,6 +40,11 @@ export class DeliveryController {
     return this.deliveryService.acceptRequest(id, user.deliveryPartnerId!, user);
   }
 
+  @Post('deliveries/:orderId/accept')
+  async acceptOrderByOrderId(@Param('orderId') orderId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.deliveryService.acceptRequest(orderId, user.deliveryPartnerId!, user);
+  }
+
   @Post('delivery-requests/:id/reject')
   async rejectRequest(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.deliveryService.rejectRequest(id, user.deliveryPartnerId!, user);

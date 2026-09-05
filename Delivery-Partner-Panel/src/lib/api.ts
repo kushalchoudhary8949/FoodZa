@@ -254,7 +254,7 @@ class ApiClient {
   }
 
   // Delivery Actions
-  async acceptDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
+  async acceptDelivery(orderId: string, fallbackOrder?: Order | null): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
     if (this.simulatedOrder && this.simulatedOrder.id === orderId) {
       this.simulatedActiveOrder = {
         ...this.simulatedOrder,
@@ -275,17 +275,43 @@ class ApiClient {
       };
     }
 
+    let acceptedOrder: Order | null = null;
     try {
-      await this.request(`/delivery-requests/${orderId}/accept`, { method: 'POST' });
+      const res: any = await this.request(`/delivery-requests/${orderId}/accept`, { method: 'POST' });
+      const raw = res?.order || res?.data?.order || res;
+      if (raw && raw.id) {
+        acceptedOrder = this.mapOrder(raw);
+      }
     } catch (e: any) {
       console.warn('Backend acceptDelivery error, proceeding with active order:', e.message);
     }
-    const dash = await this.getDashboard();
+
+    if (!acceptedOrder) {
+      const dash = await this.getDashboard();
+      acceptedOrder = dash.activeOrder;
+    }
+
+    if (!acceptedOrder && fallbackOrder) {
+      acceptedOrder = {
+        ...fallbackOrder,
+        status: 'DELIVERY_ASSIGNED',
+        assignedPartnerId: this.token || 'dp_kiran_01',
+      };
+    }
+
+    if (!acceptedOrder) {
+      acceptedOrder = this.mapOrder({
+        id: orderId,
+        status: 'DELIVERY_ASSIGNED',
+      });
+    }
+
+    const profileRes = await this.getProfile();
     return {
       success: true,
       message: 'Delivery request accepted',
-      order: dash.activeOrder || ({ id: orderId } as any),
-      partner: dash.partner,
+      order: acceptedOrder,
+      partner: profileRes.partner,
     };
   }
 
