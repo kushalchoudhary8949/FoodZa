@@ -14,15 +14,39 @@ export const getPartnerSocket = (): Socket => {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      transports: ['polling', 'websocket'],
+      timeout: 30000,
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      console.log('[Socket.IO] Delivery partner connected:', socket?.id);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('[Socket.IO] Connection error:', err.message);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[Socket.IO] Disconnected:', reason);
     });
   }
   return socket;
 };
 
-export const joinPartnerRoom = (partnerUserId: string) => {
+export const joinPartnerRoom = (partnerId: string) => {
   const s = getPartnerSocket();
-  s.emit('join:user', { userId: partnerUserId });
+
+  // Join both rooms — user room for general notifications, delivery-partner room for delivery requests
+  s.emit('join:user', { userId: partnerId });
+  s.emit('join:delivery-partner', { partnerId });
+
+  // Re-join rooms on reconnect
+  s.off('connect'); // Remove previous listeners to avoid duplicates
+  s.on('connect', () => {
+    console.log('[Socket.IO] Reconnected, re-joining partner rooms');
+    s.emit('join:user', { userId: partnerId });
+    s.emit('join:delivery-partner', { partnerId });
+  });
 };
 
 export const subscribeToDeliveryRequests = (callback: (data: any) => void) => {
@@ -30,5 +54,13 @@ export const subscribeToDeliveryRequests = (callback: (data: any) => void) => {
   s.on('delivery:request', callback);
   return () => {
     s.off('delivery:request', callback);
+  };
+};
+
+export const subscribeToOrderUpdates = (callback: (data: any) => void) => {
+  const s = getPartnerSocket();
+  s.on('order:updated', callback);
+  return () => {
+    s.off('order:updated', callback);
   };
 };

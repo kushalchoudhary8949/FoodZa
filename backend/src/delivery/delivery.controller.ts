@@ -77,4 +77,9 @@ export class DeliveryController {
   async completeDelivery(@Param('orderId') orderId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.deliveryService.completeDelivery(orderId, user.deliveryPartnerId!, user);
   }
+
+  @Post('delivery-partners/simulate-dispatch')
+  async simulateDispatch(@CurrentUser() user: AuthenticatedUser) {
+    return this.deliveryService.simulateDispatch(user.deliveryPartnerId!);
+  }
 }

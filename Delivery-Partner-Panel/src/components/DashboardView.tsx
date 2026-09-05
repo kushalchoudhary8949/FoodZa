@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Order, PartnerProfile } from '../types';
 import { api } from '../lib/api';
+import { soundManager } from '../lib/audio';
 
 interface DashboardViewProps {
   partner: PartnerProfile;
@@ -69,6 +70,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       setIsDispatching(true);
       setSimMessage(null);
       const res = await api.dispatchNewOrder();
+      soundManager.playNewOrderAlert();
       setSimMessage(`New delivery request #${res.order.id} sent! Review the dispatch alert.`);
       onRefreshDashboard();
     } catch (err: any) {

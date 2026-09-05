@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from './lib/api';
 import { soundManager } from './lib/audio';
+import { joinPartnerRoom, subscribeToDeliveryRequests } from './lib/socket';
 import { ActiveTab, Order, PartnerProfile } from './types';
 import { LoginModal } from './components/LoginModal';
 import { Navbar } from './components/Navbar';
@@ -57,10 +58,27 @@ export default function App() {
           setAvailableOrdersCount(data.availableOrdersCount);
         }).catch(() => {});
       }
-    }, 4000);
+    }, 8000); // Reduced frequency since we now have Socket.IO push
 
     return () => clearInterval(interval);
   }, [partner, incomingRequest]);
+
+  // Socket.IO: Real-time delivery request push notifications
+  useEffect(() => {
+    if (!partner) return;
+
+    const partnerId = api.getToken() || partner.id;
+    joinPartnerRoom(partnerId);
+
+    const unsubscribe = subscribeToDeliveryRequests((data: any) => {
+      console.log('[Socket.IO] Incoming delivery request:', data);
+      soundManager.playNewOrderAlert();
+      // Immediately refresh dashboard to pick up the new request
+      refreshDashboard();
+    });
+
+    return unsubscribe;
+  }, [partner, refreshDashboard]);
 
   // Handler: Login Success
   const handleLoginSuccess = (profile: PartnerProfile) => {
@@ -125,7 +143,12 @@ export default function App() {
   // Trigger manual simulation dispatch
   const handleSimulateOrder = async () => {
     try {
-      await api.dispatchNewOrder();
+      const res = await api.dispatchNewOrder();
+      if (res && res.order) {
+        setIncomingRequest(res.order);
+        setAvailableOrdersCount(1);
+        soundManager.playNewOrderAlert();
+      }
       refreshDashboard();
     } catch (err: any) {
       alert(err.message || 'Failed to dispatch test order');

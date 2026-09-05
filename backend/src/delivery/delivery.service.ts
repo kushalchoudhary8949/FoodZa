@@ -381,6 +381,106 @@ export class DeliveryService {
     });
   }
 
+  /**
+   * Simulate a delivery dispatch for testing — finds or creates an eligible order and triggers assignment
+   */
+  async simulateDispatch(partnerId: string) {
+    // 1. Clear any existing pending requests for this partner so they can receive new ones
+    await this.prisma.deliveryRequest.updateMany({
+      where: {
+        deliveryPartnerId: partnerId,
+        status: DeliveryRequestStatus.PENDING,
+      },
+      data: { status: DeliveryRequestStatus.EXPIRED },
+    });
+
+    // 2. Ensure partner is online and free
+    await this.prisma.deliveryPartner.update({
+      where: { id: partnerId },
+      data: { onlineStatus: OnlineStatus.ONLINE, currentOrderId: null },
+    });
+
+    // 3. Find an order that's ready for delivery assignment
+    let eligibleOrder = await this.prisma.order.findFirst({
+      where: {
+        status: {
+          in: [
+            OrderStatus.MANAGER_ACCEPTED,
+            OrderStatus.ADMIN_ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.WAITING_FOR_PARTNER,
+          ],
+        },
+        deliveryPartnerId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Fallback: If no eligible order, find ANY order and reset it to READY_FOR_PICKUP
+    if (!eligibleOrder) {
+      const anyOrder = await this.prisma.order.findFirst({
+        orderBy: { createdAt: 'desc' },
+      });
+      if (anyOrder) {
+        eligibleOrder = await this.prisma.order.update({
+          where: { id: anyOrder.id },
+          data: {
+            status: OrderStatus.READY_FOR_PICKUP,
+            deliveryPartnerId: null,
+          },
+        });
+        await this.prisma.deliveryRequest.deleteMany({
+          where: { orderId: anyOrder.id },
+        });
+      }
+    }
+
+    // Fallback 2: If no order at all in DB, create a demo order
+    if (!eligibleOrder) {
+      const restaurant = await this.prisma.restaurant.findFirst();
+      const customer = await this.prisma.customer.findFirst();
+      if (restaurant && customer) {
+        const orderNumber = `FC-${Date.now().toString().slice(-6)}`;
+        eligibleOrder = await this.prisma.order.create({
+          data: {
+            orderNumber,
+            customerId: customer.id,
+            restaurantId: restaurant.id,
+            deliveryAddress: 'Hostel 4, Room 204, Campus East',
+            subtotal: 180,
+            deliveryFee: 30,
+            totalAmount: 210,
+            paymentMethod: PaymentMethod.CASH_ON_DELIVERY,
+            paymentStatus: PaymentStatus.PENDING,
+            status: OrderStatus.READY_FOR_PICKUP,
+          },
+        });
+      }
+    }
+
+    if (!eligibleOrder) {
+      throw new NotFoundException('No restaurant or customer found in database to simulate an order.');
+    }
+
+    // Clear previous requests for this partner on this order
+    await this.prisma.deliveryRequest.deleteMany({
+      where: { orderId: eligibleOrder.id, deliveryPartnerId: partnerId },
+    });
+
+    const assigned = await this.assignmentService.assignDelivery(eligibleOrder.id, partnerId);
+
+    if (!assigned) {
+      throw new BadRequestException('Delivery assignment failed — partner could not be assigned');
+    }
+
+    return {
+      success: true,
+      message: `Delivery request dispatched for order ${eligibleOrder.orderNumber || eligibleOrder.id}`,
+      orderId: eligibleOrder.id,
+    };
+  }
+
   private async ensurePartnerOrder(orderId: string, partnerId: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');

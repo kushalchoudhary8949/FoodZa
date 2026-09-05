@@ -61,6 +61,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return { event: 'joined', room: `user:${data.userId}` };
   }
 
+  @SubscribeMessage('join:delivery-partner')
+  handleJoinDeliveryPartner(@ConnectedSocket() client: Socket, @MessageBody() data: { partnerId: string }) {
+    client.join(`delivery-partner:${data.partnerId}`);
+    this.logger.log(`Client ${client.id} joined room: delivery-partner:${data.partnerId}`);
+    return { event: 'joined', room: `delivery-partner:${data.partnerId}` };
+  }
+
   // ── Broadcast Helpers ──
 
   /**
@@ -101,6 +108,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   emitManagerTimeoutToAdmin(orderData: any) {
     this.server.to('admin').emit('order:timeout', orderData);
     this.logger.log(`Emitted order:timeout to admin`);
+  }
+
+  /**
+   * Emit delivery request alert to a specific delivery partner
+   */
+  emitDeliveryRequest(partnerId: string, requestData: any) {
+    this.server.to(`delivery-partner:${partnerId}`).emit('delivery:request', requestData);
+    this.logger.log(`Emitted delivery:request to delivery-partner:${partnerId}`);
   }
 
   /**
