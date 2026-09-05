@@ -282,8 +282,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
             {activeOrders.slice(0, 3).map((order) => {
               const isAccepted = order.status === 'MANAGER_ACCEPTED';
               const isPreparing = order.status === 'PREPARING';
-              const isReady = order.status === 'READY_FOR_PICKUP';
-              const isOut = order.status === 'OUT_FOR_DELIVERY';
+              const isReady =
+                order.status === 'READY_FOR_PICKUP' ||
+                order.status === 'WAITING_FOR_PARTNER' ||
+                order.status === 'DELIVERY_ASSIGNED';
+              const isOut = order.status === 'OUT_FOR_DELIVERY' || order.status === 'PICKED_UP';
 
               return (
                 <div
@@ -383,7 +386,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
 
                     {isReady && (
                       <div className="text-center py-1.5 px-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
-                        ✓ Food ready on counter • Waiting for partner pickup
+                        ✓ Food ready on counter • {order.status === 'DELIVERY_ASSIGNED' ? 'Rider assigned, arriving for pickup' : 'Waiting for partner pickup'}
                       </div>
                     )}
 

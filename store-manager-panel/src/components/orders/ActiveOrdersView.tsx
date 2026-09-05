@@ -45,8 +45,14 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
     // Tab filter
     if (filterTab === 'ACCEPTED' && order.status !== 'MANAGER_ACCEPTED') return false;
     if (filterTab === 'PREPARING' && order.status !== 'PREPARING') return false;
-    if (filterTab === 'READY' && order.status !== 'READY_FOR_PICKUP') return false;
-    if (filterTab === 'OUT' && order.status !== 'OUT_FOR_DELIVERY') return false;
+    if (
+      filterTab === 'READY' &&
+      order.status !== 'READY_FOR_PICKUP' &&
+      order.status !== 'WAITING_FOR_PARTNER' &&
+      order.status !== 'DELIVERY_ASSIGNED'
+    )
+      return false;
+    if (filterTab === 'OUT' && order.status !== 'OUT_FOR_DELIVERY' && order.status !== 'PICKED_UP') return false;
 
     // Search
     if (searchQuery.trim()) {
@@ -138,7 +144,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            Food Ready ({activeOrders.filter((o) => o.status === 'READY_FOR_PICKUP').length})
+            Food Ready ({activeOrders.filter((o) => o.status === 'READY_FOR_PICKUP' || o.status === 'WAITING_FOR_PARTNER' || o.status === 'DELIVERY_ASSIGNED').length})
           </button>
 
           <button
@@ -150,7 +156,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            Out for Delivery ({activeOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY').length})
+            Out for Delivery ({activeOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'PICKED_UP').length})
           </button>
         </div>
 
@@ -188,8 +194,11 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
           {filteredOrders.map((order) => {
             const isAccepted = order.status === 'MANAGER_ACCEPTED';
             const isPreparing = order.status === 'PREPARING';
-            const isReady = order.status === 'READY_FOR_PICKUP';
-            const isOut = order.status === 'OUT_FOR_DELIVERY';
+            const isReady =
+              order.status === 'READY_FOR_PICKUP' ||
+              order.status === 'WAITING_FOR_PARTNER' ||
+              order.status === 'DELIVERY_ASSIGNED';
+            const isOut = order.status === 'OUT_FOR_DELIVERY' || order.status === 'PICKED_UP';
 
             return (
               <div
@@ -354,7 +363,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                   {isReady && (
                     <div className="flex-1 py-2 px-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-center gap-1.5">
                       <PackageCheck className="w-4 h-4" />
-                      <span>Food on pickup shelf • Awaiting Rider Handover</span>
+                      <span>{order.status === 'DELIVERY_ASSIGNED' ? 'Rider assigned • Arriving at store' : 'Food on pickup shelf • Awaiting Rider Handover'}</span>
                     </div>
                   )}
 

@@ -48,7 +48,17 @@ export const OrderHistoryView: React.FC = () => {
 
     // Status filter
     if (statusFilter !== 'ALL') {
-      if (order.status !== statusFilter) return false;
+      if (statusFilter === 'READY_FOR_PICKUP') {
+        if (
+          order.status !== 'READY_FOR_PICKUP' &&
+          order.status !== 'WAITING_FOR_PARTNER' &&
+          order.status !== 'DELIVERY_ASSIGNED'
+        ) {
+          return false;
+        }
+      } else if (order.status !== statusFilter) {
+        return false;
+      }
     }
 
     // Payment filter

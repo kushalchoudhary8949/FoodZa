@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from './lib/api';
 import { soundManager } from './lib/audio';
-import { joinPartnerRoom, subscribeToDeliveryRequests } from './lib/socket';
+import { joinPartnerRoom, subscribeToDeliveryRequests, subscribeToOrderUpdates } from './lib/socket';
 import { ActiveTab, Order, PartnerProfile } from './types';
 import { LoginModal } from './components/LoginModal';
 import { Navbar } from './components/Navbar';
@@ -70,14 +70,43 @@ export default function App() {
     const partnerId = api.getToken() || partner.id;
     joinPartnerRoom(partnerId);
 
-    const unsubscribe = subscribeToDeliveryRequests((data: any) => {
+    const unsubRequests = subscribeToDeliveryRequests((data: any) => {
       console.log('[Socket.IO] Incoming delivery request:', data);
       soundManager.playNewOrderAlert();
-      // Immediately refresh dashboard to pick up the new request
+      if (data?.order) {
+        try {
+          const mapped = api.mapOrder(data.order);
+          setIncomingRequest(mapped);
+          setAvailableOrdersCount((prev) => Math.max(prev, 1));
+        } catch {
+          setIncomingRequest(data.order);
+        }
+      }
       refreshDashboard();
     });
 
-    return unsubscribe;
+    const unsubUpdates = subscribeToOrderUpdates((data: any) => {
+      console.log('[Socket.IO] Order update received on delivery panel:', data);
+      if (
+        (data.status === 'READY_FOR_PICKUP' || data.status === 'WAITING_FOR_PARTNER') &&
+        data.payload
+      ) {
+        soundManager.playNewOrderAlert();
+        try {
+          const mapped = api.mapOrder(data.payload);
+          setIncomingRequest(mapped);
+          setAvailableOrdersCount((prev) => Math.max(prev, 1));
+        } catch {
+          setIncomingRequest(data.payload);
+        }
+      }
+      refreshDashboard();
+    });
+
+    return () => {
+      unsubRequests();
+      unsubUpdates();
+    };
   }, [partner, refreshDashboard]);
 
   // Handler: Login Success

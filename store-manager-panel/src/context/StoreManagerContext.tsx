@@ -185,10 +185,25 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
           timeoutSeconds: 60,
         }));
         setAllOrders((prev) => {
-          // Merge preserving any unsynced local orders
+          const prevMap = new Map(prev.map((p) => [p.id, p]));
+          const mergedFetched = mappedOrders.map((fetched) => {
+            const local = prevMap.get(fetched.id);
+            if (local) {
+              // Never regress an order back to PREPARING if manager already marked it READY_FOR_PICKUP
+              if (
+                (local.status === 'READY_FOR_PICKUP' || local.status === 'WAITING_FOR_PARTNER' || local.status === 'DELIVERY_ASSIGNED') &&
+                (fetched.status === 'PREPARING' || fetched.status === 'MANAGER_ACCEPTED')
+              ) {
+                return { ...fetched, status: local.status };
+              }
+            }
+            return fetched;
+          });
+
+          // Preserve any local orders that were not in fetched
           const fetchedIds = new Set(mappedOrders.map((m) => m.id));
-          const localOnly = prev.filter((p) => !fetchedIds.has(p.id) && p.status === 'WAITING_FOR_MANAGER');
-          return [...localOnly, ...mappedOrders];
+          const localOnly = prev.filter((p) => !fetchedIds.has(p.id));
+          return [...localOnly, ...mergedFetched];
         });
 
         // Check for pending order
@@ -323,8 +338,10 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       o.status === 'MANAGER_ACCEPTED' ||
       o.status === 'PREPARING' ||
       o.status === 'READY_FOR_PICKUP' ||
-      o.status === 'OUT_FOR_DELIVERY' ||
-      o.status === 'DELIVERY_ASSIGNED'
+      o.status === 'WAITING_FOR_PARTNER' ||
+      o.status === 'DELIVERY_ASSIGNED' ||
+      o.status === 'PICKED_UP' ||
+      o.status === 'OUT_FOR_DELIVERY'
   );
 
   // Search allOrders (not storeOrders) so the popup works even if store filtering

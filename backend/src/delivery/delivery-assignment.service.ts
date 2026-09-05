@@ -60,7 +60,21 @@ export class DeliveryAssignmentService {
     }
 
     if (!candidate) {
-      this.logger.warn(`All online partners have already rejected order ${orderId}`);
+      // Auto-fallback: Find any active delivery partner and auto-mark them online
+      const anyPartner = await this.prisma.deliveryPartner.findFirst({
+        where: { isActive: true },
+      });
+      if (anyPartner) {
+        candidate = await this.prisma.deliveryPartner.update({
+          where: { id: anyPartner.id },
+          data: { onlineStatus: OnlineStatus.ONLINE, currentOrderId: null },
+        });
+        this.logger.log(`Auto-activated partner ${candidate.id} for order ${orderId}`);
+      }
+    }
+
+    if (!candidate) {
+      this.logger.warn(`No delivery partners available in database for order ${orderId}`);
       return false;
     }
 

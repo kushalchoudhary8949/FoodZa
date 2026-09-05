@@ -36,9 +36,10 @@ export const getPartnerSocket = (): Socket => {
 export const joinPartnerRoom = (partnerId: string) => {
   const s = getPartnerSocket();
 
-  // Join both rooms — user room for general notifications, delivery-partner room for delivery requests
+  // Join partner room, user room, and general delivery-partners broadcast room
   s.emit('join:user', { userId: partnerId });
   s.emit('join:delivery-partner', { partnerId });
+  s.emit('join:delivery-partners');
 
   // Re-join rooms on reconnect
   s.off('connect'); // Remove previous listeners to avoid duplicates
@@ -46,6 +47,7 @@ export const joinPartnerRoom = (partnerId: string) => {
     console.log('[Socket.IO] Reconnected, re-joining partner rooms');
     s.emit('join:user', { userId: partnerId });
     s.emit('join:delivery-partner', { partnerId });
+    s.emit('join:delivery-partners');
   });
 };
 

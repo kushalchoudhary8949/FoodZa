@@ -38,10 +38,16 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   const isAccepted = order.status === 'MANAGER_ACCEPTED';
   const isPreparing = order.status === 'PREPARING';
-  const isReady = order.status === 'READY_FOR_PICKUP';
-  const isOut = order.status === 'OUT_FOR_DELIVERY';
+  const isReady =
+    order.status === 'READY_FOR_PICKUP' ||
+    order.status === 'WAITING_FOR_PARTNER' ||
+    order.status === 'DELIVERY_ASSIGNED';
+  const isOut = order.status === 'OUT_FOR_DELIVERY' || order.status === 'PICKED_UP';
   const isDelivered = order.status === 'DELIVERED';
-  const isCancelled = order.status === 'CANCELLED' || order.status === 'REJECTED';
+  const isCancelled =
+    order.status === 'CANCELLED' ||
+    order.status === 'REJECTED' ||
+    order.status === 'MANAGER_REJECTED';
 
   // Timeline steps
   const timelineSteps = [
@@ -55,13 +61,17 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   const getStepIndex = (status: string) => {
     switch (status) {
+      case 'WAITING_FOR_MANAGER':
       case 'PENDING_MANAGER_ACCEPTANCE': return 0;
       case 'MANAGER_ACCEPTED': return 1;
       case 'PREPARING': return 2;
-      case 'READY_FOR_PICKUP': return 3;
+      case 'READY_FOR_PICKUP':
+      case 'WAITING_FOR_PARTNER':
+      case 'DELIVERY_ASSIGNED': return 3;
+      case 'PICKED_UP':
       case 'OUT_FOR_DELIVERY': return 4;
       case 'DELIVERED': return 5;
-      default: return 1;
+      default: return 3;
     }
   };
 

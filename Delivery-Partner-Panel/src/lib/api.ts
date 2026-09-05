@@ -125,7 +125,7 @@ class ApiClient {
     };
   }
 
-  private mapOrder(o: any): Order {
+  mapOrder(o: any): Order {
     const rawStatus = o.status as string;
     let mappedStatus: DeliveryStatus = 'WAITING_FOR_PARTNER';
 
