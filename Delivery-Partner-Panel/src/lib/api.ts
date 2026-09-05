@@ -1,7 +1,7 @@
 import { Order, PartnerProfile, EarningsSummary, DeliveryStatus } from '../types';
 
 const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const API_BASE_URL = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-backend.onrender.com/api');
+const API_BASE_URL = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-bckend.onrender.com/api');
 
 class ApiClient {
   private token: string | null = null;
