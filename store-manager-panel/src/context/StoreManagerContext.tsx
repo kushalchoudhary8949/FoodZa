@@ -16,7 +16,7 @@ import {
 import { storage } from '../utils/storage';
 import { soundAlerts } from '../utils/audio';
 import { ManagerApiClient } from '../utils/api';
-import { joinStoreRoom, subscribeToNewOrders, subscribeToOrderUpdates } from '../utils/socket';
+import { joinStoreRoom, joinAdminRoom, subscribeToNewOrders, subscribeToOrderUpdates } from '../utils/socket';
 
 interface StoreManagerContextType {
   // Auth & Session
@@ -229,6 +229,8 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     joinStoreRoom(storeId);
     joinStoreRoom('cmthk0r6e000qvnlem4n66bzb');
     allStores.forEach((s) => s.id && joinStoreRoom(s.id));
+    // Also join admin room as a fallback receiver for order:new events
+    joinAdminRoom();
 
     const unsubNew = subscribeToNewOrders((newOrderData: any) => {
       console.log('Incoming order received via Socket.IO:', newOrderData);
@@ -294,7 +296,23 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [currentStore?.id]);
 
-  const storeOrders = currentStore ? allOrders.filter((o) => o.storeId === currentStore.id || (currentStore.id === 'cmthk0r6e000qvnlem4n66bzb' && (!o.storeId || o.storeId === 'store-kfc-01'))) : allOrders;
+  // Build a set of all known IDs for the current store to handle mismatches
+  // between mock IDs and real DB IDs.
+  const currentStoreIds = new Set<string>();
+  if (currentStore) {
+    currentStoreIds.add(currentStore.id);
+    // Always include the hardcoded fallback
+    if (currentStore.id === 'cmthk0r6e000qvnlem4n66bzb') {
+      currentStoreIds.add('store-kfc-01');
+    }
+  }
+
+  const storeOrders = allOrders.filter(
+    (o) =>
+      !o.storeId || // orders with no storeId default to current store
+      currentStoreIds.has(o.storeId) ||
+      (currentStore && o.storeId === currentStore.id)
+  );
   const storeFoodItems = currentStore ? allFoodItems.filter((i) => i.storeId === currentStore.id) : allFoodItems;
   const storeCategories = currentStore ? allCategories.filter((c) => c.storeId === currentStore.id) : allCategories;
   const storeIssues = currentStore ? allIssues.filter((i) => i.storeId === currentStore.id) : allIssues;
@@ -309,7 +327,11 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       o.status === 'DELIVERY_ASSIGNED'
   );
 
-  const incomingOrder = incomingOrderId ? storeOrders.find((o) => o.id === incomingOrderId && o.status === 'WAITING_FOR_MANAGER') || null : null;
+  // Search allOrders (not storeOrders) so the popup works even if store filtering
+  // would have excluded the order due to ID mismatch.
+  const incomingOrder = incomingOrderId
+    ? allOrders.find((o) => o.id === incomingOrderId && o.status === 'WAITING_FOR_MANAGER') || null
+    : null;
 
   // Handle incoming order audio alerts & countdown
   useEffect(() => {

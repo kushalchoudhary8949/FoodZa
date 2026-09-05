@@ -75,11 +75,24 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
-   * Emit new order alert to store manager room
+   * Emit new order alert to store manager room (and admin as backup)
    */
-  emitNewOrderToStore(storeId: string, orderData: any) {
-    this.server.to(`store:${storeId}`).emit('order:new', orderData);
-    this.logger.log(`Emitted order:new to store:${storeId}`);
+  async emitNewOrderToStore(storeId: string, orderData: any) {
+    const storeRoom = `store:${storeId}`;
+    this.server.to(storeRoom).emit('order:new', orderData);
+
+    // Also broadcast to admin room so admin dashboard sees new orders instantly
+    this.server.to('admin').emit('order:new', orderData);
+
+    // Log room membership for debugging connectivity issues
+    try {
+      const storeClients = await this.server.in(storeRoom).fetchSockets();
+      this.logger.log(
+        `Emitted order:new to ${storeRoom} (${storeClients.length} client(s)) and admin room`,
+      );
+    } catch {
+      this.logger.log(`Emitted order:new to ${storeRoom} and admin room`);
+    }
   }
 
   /**

@@ -5,19 +5,49 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || (isLocal ? 'http://localho
 
 let socket: Socket | null = null;
 
+// Track joined rooms so we can re-join on reconnect
+const joinedStoreRooms = new Set<string>();
+
 export const getManagerSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       transports: ['polling', 'websocket'],
+    });
+
+    socket.on('connect', () => {
+      console.log('[Socket.IO] Connected:', socket?.id);
+      // Re-join all store rooms on every (re)connect
+      joinedStoreRooms.forEach((storeId) => {
+        socket?.emit('join:store', { storeId });
+        console.log('[Socket.IO] Re-joined store room:', storeId);
+      });
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.warn('[Socket.IO] Disconnected:', reason);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('[Socket.IO] Connection error:', err.message);
     });
   }
   return socket;
 };
 
 export const joinStoreRoom = (storeId: string) => {
+  if (!storeId) return;
+  joinedStoreRooms.add(storeId);
   const s = getManagerSocket();
-  s.emit('join:store', { storeId });
+  if (s.connected) {
+    s.emit('join:store', { storeId });
+    console.log('[Socket.IO] Joined store room:', storeId);
+  }
+  // If not connected yet, the 'connect' handler above will join automatically
 };
 
 export const subscribeToNewOrders = (callback: (order: any) => void) => {
@@ -26,6 +56,18 @@ export const subscribeToNewOrders = (callback: (order: any) => void) => {
   return () => {
     s.off('order:new', callback);
   };
+};
+
+export const joinAdminRoom = () => {
+  const s = getManagerSocket();
+  if (s.connected) {
+    s.emit('join:admin');
+    console.log('[Socket.IO] Joined admin room as fallback');
+  }
+  // Also join on reconnect
+  s.on('connect', () => {
+    s.emit('join:admin');
+  });
 };
 
 export const subscribeToOrderUpdates = (callback: (data: { orderId: string; status: string; payload: any }) => void) => {
