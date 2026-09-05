@@ -169,8 +169,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             minOrder: 100,
             isVegOnly: false,
             isOpen: s.isOpen ?? true,
-            image: s.imageUrl || 'https://images.unsplash.com/photo-1513639776629-7b61b0ac49cb?auto=format&fit=crop&w=800&q=80',
-            logo: s.imageUrl || 'https://images.unsplash.com/photo-1513639776629-7b61b0ac49cb?auto=format&fit=crop&w=800&q=80',
+            image: (!s.imageUrl || s.imageUrl.includes('placeholder.dev')) ? 'https://images.unsplash.com/photo-1513639776629-7b61b0ac49cb?auto=format&fit=crop&w=800&q=80' : s.imageUrl,
+            logo: (!s.imageUrl || s.imageUrl.includes('placeholder.dev')) ? 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80' : s.imageUrl,
             location: s.address || 'Campus Hub',
             tagline: s.description || 'Campus favorite',
           }));
