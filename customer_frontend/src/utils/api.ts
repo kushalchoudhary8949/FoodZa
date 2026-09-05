@@ -29,7 +29,7 @@ export class ApiClient {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -51,7 +51,7 @@ export class ApiClient {
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        throw new Error('Server response timed out after 6 seconds');
+        throw new Error('Server response timed out after 20 seconds');
       }
       throw err;
     }

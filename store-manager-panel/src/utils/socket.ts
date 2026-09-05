@@ -18,7 +18,8 @@ export const getManagerSocket = (): Socket => {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      transports: ['polling', 'websocket'],
+      timeout: 30000,
+      transports: ['websocket', 'polling'],
     });
 
     socket.on('connect', () => {
