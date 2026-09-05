@@ -12,7 +12,7 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: true,
     credentials: true,
   },
   transports: ['polling', 'websocket'],

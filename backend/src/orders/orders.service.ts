@@ -210,6 +210,7 @@ export class OrdersService {
         include: {
           orderItems: true,
           restaurant: { select: { name: true, phone: true } },
+          customer: { include: { user: { select: { name: true, phone: true } } } },
         },
       });
 

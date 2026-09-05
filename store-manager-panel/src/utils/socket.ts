@@ -7,6 +7,7 @@ let socket: Socket | null = null;
 
 // Track joined rooms so we can re-join on reconnect
 const joinedStoreRooms = new Set<string>();
+let joinedAdminRoom = false;
 
 export const getManagerSocket = (): Socket => {
   if (!socket) {
@@ -26,6 +27,10 @@ export const getManagerSocket = (): Socket => {
         socket?.emit('join:store', { storeId });
         console.log('[Socket.IO] Re-joined store room:', storeId);
       });
+      if (joinedAdminRoom) {
+        socket?.emit('join:admin');
+        console.log('[Socket.IO] Re-joined admin room as fallback');
+      }
     });
 
     socket.on('disconnect', (reason) => {
@@ -59,15 +64,12 @@ export const subscribeToNewOrders = (callback: (order: any) => void) => {
 };
 
 export const joinAdminRoom = () => {
+  joinedAdminRoom = true;
   const s = getManagerSocket();
   if (s.connected) {
     s.emit('join:admin');
     console.log('[Socket.IO] Joined admin room as fallback');
   }
-  // Also join on reconnect
-  s.on('connect', () => {
-    s.emit('join:admin');
-  });
 };
 
 export const subscribeToOrderUpdates = (callback: (data: { orderId: string; status: string; payload: any }) => void) => {
