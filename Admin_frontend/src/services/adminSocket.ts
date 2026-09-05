@@ -9,6 +9,10 @@ export const getAdminSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       transports: ['polling', 'websocket'],
     });
   }
