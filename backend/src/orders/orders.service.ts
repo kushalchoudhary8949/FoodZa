@@ -170,63 +170,63 @@ export class OrdersService {
     const timeoutSeconds = this.config.get<number>('MANAGER_TIMEOUT_SECONDS', 60);
     const deadline = new Date(Date.now() + timeoutSeconds * 1000);
 
-    // 5. Execute creation transaction
-    const order = await this.prisma.$transaction(async (tx) => {
-      const newOrder = await tx.order.create({
-        data: {
-          orderNumber,
-          customerId,
-          restaurantId: dto.restaurantId,
-          addressId: dto.addressId,
-          deliveryAddress: deliveryAddressStr,
-          hostelOrPgName,
-          roomNumber,
-          subtotal,
-          deliveryFee,
-          discountAmount,
-          totalAmount,
-          paymentMethod: dto.paymentMethod,
-          paymentStatus: PaymentStatus.PENDING,
-          status: OrderStatus.WAITING_FOR_MANAGER,
-          managerResponseDeadline: deadline,
-          orderItems: {
-            create: orderItemsData,
-          },
-          payment: {
-            create: {
-              method: dto.paymentMethod,
-              status: PaymentStatus.PENDING,
-              amount: totalAmount,
-            },
-          },
-          orderEvents: {
-            create: {
-              eventType: 'ORDER_CREATED',
-              newStatus: OrderStatus.WAITING_FOR_MANAGER,
-              metadata: { createdByCustomer: customerId },
-            },
+    // 5. Execute creation directly (Prisma nested create is inherently atomic in a single transaction)
+    const order = await this.prisma.order.create({
+      data: {
+        orderNumber,
+        customerId,
+        restaurantId: dto.restaurantId,
+        addressId: dto.addressId,
+        deliveryAddress: deliveryAddressStr,
+        hostelOrPgName,
+        roomNumber,
+        subtotal,
+        deliveryFee,
+        discountAmount,
+        totalAmount,
+        paymentMethod: dto.paymentMethod,
+        paymentStatus: PaymentStatus.PENDING,
+        status: OrderStatus.WAITING_FOR_MANAGER,
+        managerResponseDeadline: deadline,
+        orderItems: {
+          create: orderItemsData,
+        },
+        payment: {
+          create: {
+            method: dto.paymentMethod,
+            status: PaymentStatus.PENDING,
+            amount: totalAmount,
           },
         },
-        include: {
-          orderItems: true,
-          restaurant: { select: { name: true, phone: true } },
-          customer: { include: { user: { select: { name: true, phone: true } } } },
+        orderEvents: {
+          create: {
+            eventType: 'ORDER_CREATED',
+            newStatus: OrderStatus.WAITING_FOR_MANAGER,
+            metadata: { createdByCustomer: customerId },
+          },
         },
-      });
+      },
+      include: {
+        orderItems: true,
+        restaurant: { select: { name: true, phone: true } },
+        customer: { include: { user: { select: { name: true, phone: true } } } },
+      },
+    });
 
-      if (appliedOfferId) {
-        await tx.offerUsage.create({
+    if (appliedOfferId) {
+      try {
+        await this.prisma.offerUsage.create({
           data: {
             offerId: appliedOfferId,
             customerId,
-            orderId: newOrder.id,
+            orderId: order.id,
             discountAmount,
           },
         });
+      } catch (offerErr: any) {
+        this.logger.warn(`Could not record offer usage for order ${order.id}: ${offerErr.message}`);
       }
-
-      return newOrder;
-    });
+    }
 
     // 6. Schedule BullMQ Manager Timeout Job
     try {
@@ -271,16 +271,15 @@ export class OrdersService {
     // Cancel timeout job
     await this.cancelTimeoutJob(orderId);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.MANAGER_ACCEPTED,
           acceptedAt: new Date(),
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -289,10 +288,8 @@ export class OrdersService {
           newStatus: OrderStatus.MANAGER_ACCEPTED,
           metadata: dto?.reason ? { reason: dto.reason } : undefined,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     // Emit real-time update to all rooms (informational notification to admin)
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'MANAGER_ACCEPTED', updated);
@@ -315,16 +312,15 @@ export class OrdersService {
     // Cancel timeout job
     await this.cancelTimeoutJob(orderId);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.MANAGER_REJECTED,
           rejectedAt: new Date(),
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -333,10 +329,8 @@ export class OrdersService {
           newStatus: OrderStatus.MANAGER_REJECTED,
           metadata: dto?.reason ? { reason: dto.reason } : undefined,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     // Emit real-time update (informational notification to admin, rejection to customer)
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'MANAGER_REJECTED', updated);
@@ -352,16 +346,15 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.ADMIN_ACCEPTED);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.ADMIN_ACCEPTED,
           acceptedAt: new Date(),
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -370,10 +363,8 @@ export class OrdersService {
           newStatus: OrderStatus.ADMIN_ACCEPTED,
           metadata: dto?.reason ? { reason: dto.reason } : undefined,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     // Emit real-time update
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'ADMIN_ACCEPTED', updated);
@@ -396,16 +387,15 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.ADMIN_REJECTED);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.ADMIN_REJECTED,
           rejectedAt: new Date(),
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -414,10 +404,8 @@ export class OrdersService {
           newStatus: OrderStatus.ADMIN_REJECTED,
           metadata: dto?.reason ? { reason: dto.reason } : undefined,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     // Emit real-time update (customer notified of rejection)
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'ADMIN_REJECTED', updated);
@@ -436,15 +424,14 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.PREPARING);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.PREPARING,
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -452,10 +439,8 @@ export class OrdersService {
           previousStatus: order.status,
           newStatus: OrderStatus.PREPARING,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'PREPARING', updated);
 
@@ -473,16 +458,15 @@ export class OrdersService {
 
     this.validateStatusTransition(order.status, OrderStatus.READY_FOR_PICKUP);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.READY_FOR_PICKUP,
           preparedAt: new Date(),
         },
-      });
-
-      await tx.orderEvent.create({
+      }),
+      this.prisma.orderEvent.create({
         data: {
           orderId,
           actorUserId: user.id,
@@ -490,10 +474,8 @@ export class OrdersService {
           previousStatus: order.status,
           newStatus: OrderStatus.READY_FOR_PICKUP,
         },
-      });
-
-      return result;
-    });
+      }),
+    ]);
 
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'READY_FOR_PICKUP', updated);
 
