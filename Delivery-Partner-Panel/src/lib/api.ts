@@ -291,7 +291,8 @@ class ApiClient {
         acceptedOrder = this.mapOrder(raw);
       }
     } catch (e: any) {
-      console.warn('Backend acceptDelivery error, proceeding with active order:', e.message);
+      console.error('Backend acceptDelivery failed:', e.message);
+      throw e;
     }
 
     if (!acceptedOrder) {

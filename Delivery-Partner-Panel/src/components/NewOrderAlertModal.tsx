@@ -8,9 +8,15 @@ interface NewOrderAlertModalProps {
   order: Order;
   onAccept: (orderId: string) => void;
   onReject: (orderId: string, reason?: string) => void;
+  isAccepting?: boolean;
 }
 
-export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({ order, onAccept, onReject }) => {
+export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({
+  order,
+  onAccept,
+  onReject,
+  isAccepting = false,
+}) => {
   const [secondsRemaining, setSecondsRemaining] = useState(45);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('Distance too far');
@@ -189,9 +195,10 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({ order, o
                   type="button"
                   id="btn-accept-delivery"
                   onClick={() => onAccept(order.id)}
-                  className="py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/25 transition active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={isAccepting}
+                  className="py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-60 disabled:cursor-wait text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/25 transition active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>ACCEPT DELIVERY</span>
+                  <span>{isAccepting ? 'ACCEPTING...' : 'ACCEPT DELIVERY'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -202,4 +209,3 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({ order, o
     </AnimatePresence>
   );
 };
-

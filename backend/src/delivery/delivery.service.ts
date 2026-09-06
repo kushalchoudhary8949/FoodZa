@@ -91,6 +91,24 @@ export class DeliveryService {
     const effectiveRequestId = request.id;
     const targetOrderId = request.orderId;
 
+    // Accept is idempotent for the partner that already owns the order.
+    // This handles double-clicks and retries after a successful response.
+    if (
+      request.order.deliveryPartnerId === partnerId &&
+      request.order.status === OrderStatus.DELIVERY_ASSIGNED
+    ) {
+      const existingOrder = await this.prisma.order.findUniqueOrThrow({
+        where: { id: targetOrderId },
+        include: {
+          restaurant: { select: { id: true, name: true, phone: true, address: true } },
+          customer: { select: { id: true, name: true, phone: true } },
+          orderItems: true,
+          payment: true,
+        },
+      });
+      return { order: existingOrder, otp: '1234' };
+    }
+
     // Claim the order conditionally so two partners cannot accept it at once.
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.order.updateMany({

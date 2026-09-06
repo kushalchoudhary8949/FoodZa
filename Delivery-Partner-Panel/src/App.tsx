@@ -21,6 +21,7 @@ export default function App() {
   const [incomingRequest, setIncomingRequest] = useState<Order | null>(null);
   const [availableOrdersCount, setAvailableOrdersCount] = useState<number>(0);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isAcceptingDelivery, setIsAcceptingDelivery] = useState(false);
 
   // Initial Auth Check & Dashboard Fetch
   const refreshDashboard = useCallback(async (preserveIncomingRequest = false) => {
@@ -137,6 +138,8 @@ export default function App() {
 
   // Handler: Accept Incoming Delivery Request (Section 3 & 4)
   const handleAcceptDelivery = async (orderId: string) => {
+    if (isAcceptingDelivery || !incomingRequest) return;
+    setIsAcceptingDelivery(true);
     try {
       const res = await api.acceptDelivery(orderId, incomingRequest);
       soundManager.playSuccessSound();
@@ -146,6 +149,8 @@ export default function App() {
     } catch (err: any) {
       alert(err.message || 'Failed to accept delivery');
       refreshDashboard();
+    } finally {
+      setIsAcceptingDelivery(false);
     }
   };
 
@@ -280,6 +285,7 @@ export default function App() {
           order={incomingRequest}
           onAccept={handleAcceptDelivery}
           onReject={handleRejectDelivery}
+          isAccepting={isAcceptingDelivery}
         />
       )}
     </div>
