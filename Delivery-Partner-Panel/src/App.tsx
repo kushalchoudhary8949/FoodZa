@@ -23,14 +23,18 @@ export default function App() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   // Initial Auth Check & Dashboard Fetch
-  const refreshDashboard = useCallback(async () => {
+  const refreshDashboard = useCallback(async (preserveIncomingRequest = false) => {
     try {
       const data = await api.getDashboard();
       setPartner(data.partner);
       const isStillActive = data.activeOrder && data.activeOrder.status !== 'DELIVERED' && !data.activeOrder.paymentReceived;
       setActiveOrder(isStillActive ? data.activeOrder : null);
-      setIncomingRequest(data.incomingRequest);
-      setAvailableOrdersCount(data.availableOrdersCount);
+      setIncomingRequest((current) => (
+        preserveIncomingRequest && current ? current : data.incomingRequest
+      ));
+      setAvailableOrdersCount((current) => (
+        preserveIncomingRequest && current > 0 ? current : data.availableOrdersCount
+      ));
     } catch {
       // Token might be invalid or expired
       setPartner(null);
@@ -40,7 +44,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refreshDashboard();
+    void refreshDashboard();
   }, [refreshDashboard]);
 
   // Periodic polling for incoming delivery requests when partner is Online
@@ -82,7 +86,7 @@ export default function App() {
           setIncomingRequest(data.order);
         }
       }
-      refreshDashboard();
+      void refreshDashboard(true);
     });
 
     const unsubUpdates = subscribeToOrderUpdates((data: any) => {
@@ -100,7 +104,7 @@ export default function App() {
           setIncomingRequest(data.payload);
         }
       }
-      refreshDashboard();
+      void refreshDashboard(true);
     });
 
     return () => {

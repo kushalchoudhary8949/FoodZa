@@ -338,6 +338,24 @@ class ApiClient {
     return { success: true, message: 'Order picked up', order: dash.activeOrder!, partner: dash.partner };
   }
 
+  async outForDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
+    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
+      this.simulatedActiveOrder = {
+        ...this.simulatedActiveOrder,
+        status: 'OUT_FOR_DELIVERY',
+      };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
+      }
+      const dash = await this.getDashboard();
+      return { success: true, message: 'Order is out for delivery', order: this.simulatedActiveOrder, partner: dash.partner };
+    }
+
+    await this.request(`/deliveries/${orderId}/out-for-delivery`, { method: 'POST' });
+    const dash = await this.getDashboard();
+    return { success: true, message: 'Order is out for delivery', order: dash.activeOrder!, partner: dash.partner };
+  }
+
   async verifyOtp(orderId: string, otp: string): Promise<{ success: boolean; verified: boolean; message: string; order: Order; partner: PartnerProfile }> {
     if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
       const correct = otp === (this.simulatedActiveOrder.secretOtp || '1234') || otp === '1234' || otp === '5821';

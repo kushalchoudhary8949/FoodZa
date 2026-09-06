@@ -46,6 +46,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isMarkingDelivered, setIsMarkingDelivered] = useState(false);
   const [isPickingUp, setIsPickingUp] = useState(false);
+  const [isStartingTransit, setIsStartingTransit] = useState(false);
   const [deliveredSuccessOrder, setDeliveredSuccessOrder] = useState<Order | null>(null);
 
   const [isFastTracking, setIsFastTracking] = useState(false);
@@ -90,6 +91,12 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
       if (current.status === 'DELIVERY_ASSIGNED') {
         const pickupRes = await api.pickupOrder(current.id);
         current = pickupRes.order;
+        onOrderUpdated(current);
+      }
+
+      if (current.status === 'PICKED_UP') {
+        const transitRes = await api.outForDelivery(current.id);
+        current = transitRes.order;
         onOrderUpdated(current);
       }
 
@@ -249,6 +256,19 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
     }
   };
 
+  const handleStartTransit = async () => {
+    try {
+      setIsStartingTransit(true);
+      const res = await api.outForDelivery(active.id);
+      soundManager.playSuccessSound();
+      onOrderUpdated(res.order);
+    } catch (err: any) {
+      alert(err.message || 'Failed to start delivery');
+    } finally {
+      setIsStartingTransit(false);
+    }
+  };
+
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpInput || otpInput.trim().length !== 4) {
@@ -344,6 +364,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
   };
 
   const isAssigned = active.status === 'DELIVERY_ASSIGNED';
+  const isPickedUp = active.status === 'PICKED_UP';
   const isOutForDelivery = active.status === 'OUT_FOR_DELIVERY';
   const isOtpVerified = active.otpVerified || active.status === 'OTP_VERIFIED' || active.status === 'PAYMENT_RECEIVED';
   const isCod = active.paymentMethod === 'COD';
@@ -385,9 +406,9 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
               <div className="text-[11px] truncate mt-0.5 font-semibold">{isAssigned ? '● Current' : '✓ Done'}</div>
             </div>
 
-            <div className={`p-2.5 rounded-xl border transition ${isOutForDelivery && !isOtpVerified ? 'bg-amber-400/15 border-amber-400 text-amber-300 font-bold shadow-md shadow-amber-400/10' : isOtpVerified ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2.5 rounded-xl border transition ${(isPickedUp || isOutForDelivery) && !isOtpVerified ? 'bg-amber-400/15 border-amber-400 text-amber-300 font-bold shadow-md shadow-amber-400/10' : isOtpVerified ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
               <div className="text-[10px] font-black uppercase tracking-wider">2. Transit</div>
-              <div className="text-[11px] truncate mt-0.5 font-semibold">{isOutForDelivery && !isOtpVerified ? '● Current' : isOtpVerified ? '✓ Arrived' : 'Next'}</div>
+              <div className="text-[11px] truncate mt-0.5 font-semibold">{(isPickedUp || isOutForDelivery) && !isOtpVerified ? '● Current' : isOtpVerified ? '✓ Arrived' : 'Next'}</div>
             </div>
 
             <div className={`p-2.5 rounded-xl border transition ${isOtpVerified ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold' : isOutForDelivery ? 'bg-amber-400/15 border-amber-400 text-amber-300 font-bold' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
@@ -546,6 +567,39 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
               )}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* STEP 2: START TRANSIT */}
+      {isPickedUp && (
+        <div id="stage-transit-start-card" className="bg-slate-900 border-2 border-amber-500/80 rounded-2xl p-5 sm:p-6 shadow-2xl shadow-amber-500/10 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 border border-amber-400/40 flex items-center justify-center">
+              <Navigation className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-wider text-amber-400 font-black block">TRANSIT</span>
+              <h3 className="text-lg font-black text-white">Ready to deliver</h3>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">The order is picked up. Start navigation to the customer to continue.</p>
+          <button
+            type="button"
+            id="btn-start-transit"
+            disabled={isStartingTransit}
+            onClick={handleStartTransit}
+            className="w-full py-4 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-50 text-slate-950 font-black text-sm rounded-xl shadow-xl shadow-amber-500/25 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {isStartingTransit ? (
+              <span className="inline-block w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Navigation className="w-5 h-5" />
+                <span>START DELIVERY / GO TO CUSTOMER</span>
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
+          </button>
         </div>
       )}
 
@@ -844,4 +898,3 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
     </div>
   );
 };
-
