@@ -133,7 +133,6 @@ export default function App() {
     if (partner) {
       setPartner({ ...partner, isOnline });
     }
-    refreshDashboard();
   };
 
   // Handler: Accept Incoming Delivery Request (Section 3 & 4)
@@ -182,7 +181,6 @@ export default function App() {
         setAvailableOrdersCount(1);
         soundManager.playNewOrderAlert();
       }
-      refreshDashboard();
     } catch (err: any) {
       alert(err.message || 'Failed to dispatch test order');
     }

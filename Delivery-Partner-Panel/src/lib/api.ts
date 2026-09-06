@@ -11,6 +11,8 @@ const normalizePartnerToken = (partnerId: string) => {
 
 class ApiClient {
   private token: string | null = null;
+  private cachedPartner: PartnerProfile | null = null;
+  private cachedActiveOrder: Order | null = null;
   private simulatedOrder: Order | null = null;
   private simulatedActiveOrder: Order | null = null;
 
@@ -179,7 +181,8 @@ class ApiClient {
   // Partner Profile & Status
   async getProfile(): Promise<{ partner: PartnerProfile }> {
     const p: any = await this.request('/delivery-partners/profile');
-    return { partner: this.buildPartnerProfile(p) };
+    this.cachedPartner = this.buildPartnerProfile(p);
+    return { partner: this.cachedPartner };
   }
 
   async toggleStatus(isOnline: boolean): Promise<{ success: boolean; isOnline: boolean; partner: PartnerProfile }> {
@@ -231,6 +234,7 @@ class ApiClient {
     if (!activeOrder && this.simulatedActiveOrder) {
       activeOrder = this.simulatedActiveOrder;
     }
+    this.cachedActiveOrder = activeOrder;
 
     return {
       partner: profileRes.partner,
@@ -257,12 +261,11 @@ class ApiClient {
         localStorage.removeItem('dp_sim_order');
         localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
       }
-      const dash = await this.getDashboard();
       return {
         success: true,
         message: 'Delivery request accepted',
         order: this.simulatedActiveOrder,
-        partner: dash.partner,
+        partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
       };
     }
 
@@ -278,8 +281,7 @@ class ApiClient {
     }
 
     if (!acceptedOrder) {
-      const dash = await this.getDashboard();
-      acceptedOrder = dash.activeOrder;
+      acceptedOrder = this.cachedActiveOrder;
     }
 
     if (!acceptedOrder && fallbackOrder) {
@@ -297,12 +299,12 @@ class ApiClient {
       });
     }
 
-    const profileRes = await this.getProfile();
+    this.cachedActiveOrder = acceptedOrder;
     return {
       success: true,
       message: 'Delivery request accepted',
       order: acceptedOrder,
-      partner: profileRes.partner,
+      partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
     };
   }
 
@@ -329,13 +331,14 @@ class ApiClient {
       if (typeof window !== 'undefined') {
         localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
       }
-      const dash = await this.getDashboard();
-      return { success: true, message: 'Order picked up', order: this.simulatedActiveOrder, partner: dash.partner };
+      this.cachedActiveOrder = this.simulatedActiveOrder;
+      return { success: true, message: 'Order picked up', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
     }
 
-    await this.request(`/deliveries/${orderId}/pickup`, { method: 'POST' });
-    const dash = await this.getDashboard();
-    return { success: true, message: 'Order picked up', order: dash.activeOrder!, partner: dash.partner };
+    const raw = await this.request<any>(`/deliveries/${orderId}/pickup`, { method: 'POST' });
+    const order = this.mapOrder(raw);
+    this.cachedActiveOrder = order;
+    return { success: true, message: 'Order picked up', order, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
   }
 
   async outForDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
@@ -347,13 +350,14 @@ class ApiClient {
       if (typeof window !== 'undefined') {
         localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
       }
-      const dash = await this.getDashboard();
-      return { success: true, message: 'Order is out for delivery', order: this.simulatedActiveOrder, partner: dash.partner };
+      this.cachedActiveOrder = this.simulatedActiveOrder;
+      return { success: true, message: 'Order is out for delivery', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
     }
 
-    await this.request(`/deliveries/${orderId}/out-for-delivery`, { method: 'POST' });
-    const dash = await this.getDashboard();
-    return { success: true, message: 'Order is out for delivery', order: dash.activeOrder!, partner: dash.partner };
+    const raw = await this.request<any>(`/deliveries/${orderId}/out-for-delivery`, { method: 'POST' });
+    const order = this.mapOrder(raw);
+    this.cachedActiveOrder = order;
+    return { success: true, message: 'Order is out for delivery', order, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
   }
 
   async verifyOtp(orderId: string, otp: string): Promise<{ success: boolean; verified: boolean; message: string; order: Order; partner: PartnerProfile }> {
@@ -370,16 +374,19 @@ class ApiClient {
       if (typeof window !== 'undefined') {
         localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
       }
-      const dash = await this.getDashboard();
-      return { success: true, verified: true, message: 'OTP verified successfully', order: this.simulatedActiveOrder, partner: dash.partner };
+      this.cachedActiveOrder = this.simulatedActiveOrder;
+      return { success: true, verified: true, message: 'OTP verified successfully', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
     }
 
     await this.request(`/deliveries/${orderId}/verify-otp`, {
       method: 'POST',
       body: JSON.stringify({ otp }),
     });
-    const dash = await this.getDashboard();
-    return { success: true, verified: true, message: 'OTP verified', order: dash.activeOrder!, partner: dash.partner };
+    const order = this.cachedActiveOrder
+      ? { ...this.cachedActiveOrder, status: 'OUT_FOR_DELIVERY' as const, otpVerified: true }
+      : this.mapOrder({ id: orderId, status: 'OUT_FOR_DELIVERY' });
+    this.cachedActiveOrder = order;
+    return { success: true, verified: true, message: 'OTP verified', order, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
   }
 
   async confirmPayment(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
@@ -392,18 +399,20 @@ class ApiClient {
       if (typeof window !== 'undefined') {
         localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
       }
-      const dash = await this.getDashboard();
-      return { success: true, message: 'COD payment collected', order: this.simulatedActiveOrder, partner: dash.partner };
+      this.cachedActiveOrder = this.simulatedActiveOrder;
+      return { success: true, message: 'COD payment collected', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
     }
 
-    const dash = await this.getDashboard();
-    const amount = dash.activeOrder?.orderAmount || 200;
+    const amount = this.cachedActiveOrder?.orderAmount || 200;
     await this.request(`/deliveries/${orderId}/payment`, {
       method: 'POST',
       body: JSON.stringify({ amountCollected: amount }),
     });
-    const updatedDash = await this.getDashboard();
-    return { success: true, message: 'COD payment collected', order: updatedDash.activeOrder!, partner: updatedDash.partner };
+    const order = this.cachedActiveOrder
+      ? { ...this.cachedActiveOrder, paymentReceived: true, paymentStatus: 'COLLECTED_CASH' as const }
+      : this.mapOrder({ id: orderId, status: 'OUT_FOR_DELIVERY', paymentStatus: 'PAID' });
+    this.cachedActiveOrder = order;
+    return { success: true, message: 'COD payment collected', order, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
   }
 
   async completeDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; earningsAdded: number; partner: PartnerProfile }> {
@@ -413,24 +422,27 @@ class ApiClient {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('dp_sim_active');
       }
-      const profileRes = await this.getProfile();
       return {
         success: true,
         message: 'Order delivered successfully',
         order: { ...completedOrder, status: 'DELIVERED' },
         earningsAdded: 40,
-        partner: profileRes.partner,
+        partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
       };
     }
 
-    await this.request(`/deliveries/${orderId}/complete`, { method: 'POST' });
-    const profileRes = await this.getProfile();
+    const raw = await this.request<any>(`/deliveries/${orderId}/complete`, { method: 'POST' });
+    const order = raw?.id ? this.mapOrder(raw) : {
+      ...(this.cachedActiveOrder || this.mapOrder({ id: orderId, status: 'DELIVERED' })),
+      status: 'DELIVERED' as const,
+    };
+    this.cachedActiveOrder = null;
     return {
       success: true,
       message: 'Order delivered successfully',
-      order: { id: orderId } as any,
+      order,
       earningsAdded: 40,
-      partner: profileRes.partner,
+      partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
     };
   }
 

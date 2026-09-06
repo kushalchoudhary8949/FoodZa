@@ -72,7 +72,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const res = await api.dispatchNewOrder();
       soundManager.playNewOrderAlert();
       setSimMessage(`New delivery request #${res.order.id} sent! Review the dispatch alert.`);
-      onRefreshDashboard();
     } catch (err: any) {
       alert(err.message || 'Failed to dispatch order');
     } finally {
@@ -362,4 +361,3 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     </div>
   );
 };
-
