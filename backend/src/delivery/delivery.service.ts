@@ -384,10 +384,26 @@ export class DeliveryService {
   }
 
   async setOnlineStatus(partnerId: string, status: OnlineStatus) {
-    return this.prisma.deliveryPartner.update({
+    const partner = await this.prisma.deliveryPartner.update({
       where: { id: partnerId },
       data: { onlineStatus: status },
     });
+
+    if (status === OnlineStatus.ONLINE && !partner.currentOrderId) {
+      const readyOrder = await this.prisma.order.findFirst({
+        where: {
+          status: { in: [OrderStatus.READY_FOR_PICKUP, OrderStatus.WAITING_FOR_PARTNER] },
+          deliveryPartnerId: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (readyOrder) {
+        await this.assignmentService.assignDelivery(readyOrder.id, partnerId);
+      }
+    }
+
+    return partner;
   }
 
   async getDeliveries(partnerId: string) {

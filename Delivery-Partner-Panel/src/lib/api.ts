@@ -4,6 +4,11 @@ const isLocal = typeof window !== 'undefined' && (window.location.hostname === '
 const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-bckend.onrender.com/api');
 const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
+const normalizePartnerToken = (partnerId: string) => {
+  const normalized = partnerId.trim().toLowerCase();
+  return normalized === 'dp-8821' ? 'dp_kiran_01' : normalized;
+};
+
 class ApiClient {
   private token: string | null = null;
   private simulatedOrder: Order | null = null;
@@ -11,7 +16,7 @@ class ApiClient {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('dp_token') || 'dp_kiran_01';
+      this.token = normalizePartnerToken(localStorage.getItem('dp_token') || 'dp_kiran_01');
       try {
         const savedSim = localStorage.getItem('dp_sim_order');
         if (savedSim) this.simulatedOrder = JSON.parse(savedSim);
@@ -22,10 +27,10 @@ class ApiClient {
   }
 
   setToken(token: string | null) {
-    this.token = token;
+    this.token = token ? normalizePartnerToken(token) : null;
     if (typeof window !== 'undefined') {
-      if (token) {
-        localStorage.setItem('dp_token', token);
+      if (this.token) {
+        localStorage.setItem('dp_token', this.token);
       } else {
         localStorage.removeItem('dp_token');
       }
@@ -75,24 +80,15 @@ class ApiClient {
 
   // Auth
   async login(partnerId: string, _password?: string): Promise<{ token: string; partner: PartnerProfile; activeOrder: Order | null; incomingRequest: Order | null }> {
-    this.setToken(partnerId);
-    try {
-      const profile = await this.getProfile();
-      return {
-        token: partnerId,
-        partner: profile.partner,
-        activeOrder: null,
-        incomingRequest: null,
-      };
-    } catch {
-      const mockPartner = this.buildPartnerProfile({ id: partnerId });
-      return {
-        token: partnerId,
-        partner: mockPartner,
-        activeOrder: null,
-        incomingRequest: null,
-      };
-    }
+    const token = normalizePartnerToken(partnerId);
+    this.setToken(token);
+    const profile = await this.getProfile();
+    return {
+      token,
+      partner: profile.partner,
+      activeOrder: null,
+      incomingRequest: null,
+    };
   }
 
   async forgotPassword(partnerId: string, _newPassword?: string): Promise<{ success: boolean; message: string; registeredPhone?: string }> {
@@ -108,7 +104,8 @@ class ApiClient {
       vehicleType: 'TVS Ntorq 125',
       vehicleNumber: 'KA-03-HA-8821',
       rating: 4.9,
-      isOnline: p.onlineStatus === 'ONLINE' || true,
+      // Preserve the backend status; only use the demo default when no status exists.
+      isOnline: p.onlineStatus ? p.onlineStatus === 'ONLINE' : true,
       totalDeliveries: p.totalDeliveries || 42,
       totalEarnings: Number(p.totalEarnings || 1680),
       todayEarnings: 240,
@@ -181,19 +178,13 @@ class ApiClient {
 
   // Partner Profile & Status
   async getProfile(): Promise<{ partner: PartnerProfile }> {
-    try {
-      const p: any = await this.request('/delivery-partners/profile');
-      return { partner: this.buildPartnerProfile(p) };
-    } catch {
-      return { partner: this.buildPartnerProfile({ id: this.token || 'dp_kiran_01' }) };
-    }
+    const p: any = await this.request('/delivery-partners/profile');
+    return { partner: this.buildPartnerProfile(p) };
   }
 
   async toggleStatus(isOnline: boolean): Promise<{ success: boolean; isOnline: boolean; partner: PartnerProfile }> {
-    try {
-      const endpoint = isOnline ? '/delivery-partners/go-online' : '/delivery-partners/go-offline';
-      await this.request(endpoint, { method: 'POST' });
-    } catch {}
+    const endpoint = isOnline ? '/delivery-partners/go-online' : '/delivery-partners/go-offline';
+    await this.request(endpoint, { method: 'POST' });
     const profileRes = await this.getProfile();
     return {
       success: true,

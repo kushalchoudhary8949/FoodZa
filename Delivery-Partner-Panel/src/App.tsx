@@ -67,7 +67,7 @@ export default function App() {
   useEffect(() => {
     if (!partner) return;
 
-    const partnerId = api.getToken() || partner.id;
+    const partnerId = partner.id;
     joinPartnerRoom(partnerId);
 
     const unsubRequests = subscribeToDeliveryRequests((data: any) => {

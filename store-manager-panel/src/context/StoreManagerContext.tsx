@@ -96,6 +96,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [allFoodItems, setAllFoodItems] = useState<FoodItem[]>(() => storage.getFoodItems());
   const [allCategories, setAllCategories] = useState<MenuCategory[]>(() => storage.getCategories());
   const [allOrders, setAllOrders] = useState<Order[]>(() => storage.getOrders());
+  const orderActionIdsRef = useRef(new Set<string>());
   const [allIssues, setAllIssues] = useState<IssueTicket[]>(() => storage.getIssues());
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>(() => storage.getNotifications());
 
@@ -185,7 +186,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
           timeoutSeconds: 60,
         }));
         setAllOrders((prev) => {
-          const prevMap = new Map(prev.map((p) => [p.id, p]));
+          const prevMap = new Map<string, Order>(prev.map((p) => [p.id, p]));
           const mergedFetched = mappedOrders.map((fetched) => {
             const local = prevMap.get(fetched.id);
             if (local) {
@@ -383,53 +384,85 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [incomingOrderId, incomingOrder]);
 
   // Manager Accept Workflow
-  const acceptOrder = useCallback((orderId: string) => {
+  const acceptOrder = useCallback(async (orderId: string) => {
+    if (orderActionIdsRef.current.has(orderId)) return;
+    orderActionIdsRef.current.add(orderId);
+
     if (timerRef.current) clearInterval(timerRef.current);
     if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
 
     soundAlerts.playSuccessChime();
 
-    ManagerApiClient.acceptOrder(orderId)
-      .then(() => refreshBackendData())
-      .catch((err) => console.warn('Accept API warning:', err.message));
-
-    setAllOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'MANAGER_ACCEPTED' } : o))
-    );
-    setIncomingOrderId(null);
+    try {
+      await ManagerApiClient.acceptOrder(orderId);
+      setAllOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: 'MANAGER_ACCEPTED' } : o))
+      );
+      setIncomingOrderId(null);
+      await refreshBackendData();
+    } catch (err: any) {
+      console.warn('Accept API warning:', err.message);
+    } finally {
+      orderActionIdsRef.current.delete(orderId);
+    }
   }, [refreshBackendData]);
 
   // Manager Reject Workflow
-  const rejectOrder = useCallback((orderId: string, reason = 'Kitchen overloaded') => {
+  const rejectOrder = useCallback(async (orderId: string, reason = 'Kitchen overloaded') => {
+    if (orderActionIdsRef.current.has(orderId)) return;
+    orderActionIdsRef.current.add(orderId);
+
     if (timerRef.current) clearInterval(timerRef.current);
     if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
 
     soundAlerts.playRejectTone();
 
-    ManagerApiClient.rejectOrder(orderId, reason)
-      .then(() => refreshBackendData())
-      .catch((err) => console.warn('Reject API warning:', err.message));
-
-    setAllOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'MANAGER_REJECTED', rejectionReason: reason } : o))
-    );
-    setIncomingOrderId(null);
+    try {
+      await ManagerApiClient.rejectOrder(orderId, reason);
+      setAllOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: 'MANAGER_REJECTED', rejectionReason: reason } : o))
+      );
+      setIncomingOrderId(null);
+      await refreshBackendData();
+    } catch (err: any) {
+      console.warn('Reject API warning:', err.message);
+    } finally {
+      orderActionIdsRef.current.delete(orderId);
+    }
   }, [refreshBackendData]);
 
-  const startPreparingOrder = useCallback((orderId: string) => {
+  const startPreparingOrder = useCallback(async (orderId: string) => {
+    if (orderActionIdsRef.current.has(orderId)) return;
+    orderActionIdsRef.current.add(orderId);
     soundAlerts.playSuccessChime();
-    ManagerApiClient.startPreparingOrder(orderId).then(() => refreshBackendData()).catch(() => {});
-    setAllOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'PREPARING' } : o))
-    );
+    try {
+      await ManagerApiClient.startPreparingOrder(orderId);
+      setAllOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: 'PREPARING' } : o))
+      );
+      await refreshBackendData();
+    } catch (err: any) {
+      console.warn('Start preparing API warning:', err.message);
+    } finally {
+      orderActionIdsRef.current.delete(orderId);
+    }
   }, [refreshBackendData]);
 
-  const markFoodReady = useCallback((orderId: string) => {
+  const markFoodReady = useCallback(async (orderId: string) => {
+    if (orderActionIdsRef.current.has(orderId)) return;
+    orderActionIdsRef.current.add(orderId);
     soundAlerts.playSuccessChime();
-    ManagerApiClient.markFoodReady(orderId).then(() => refreshBackendData()).catch(() => {});
-    setAllOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'READY_FOR_PICKUP' } : o))
-    );
+    try {
+      await ManagerApiClient.markFoodReady(orderId);
+      setAllOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: 'READY_FOR_PICKUP' } : o))
+      );
+      await refreshBackendData();
+    } catch (err: any) {
+      console.warn('Food ready API warning:', err.message);
+    } finally {
+      orderActionIdsRef.current.delete(orderId);
+    }
   }, [refreshBackendData]);
 
   const toggleStoreStatus = useCallback(() => {

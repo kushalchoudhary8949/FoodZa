@@ -80,6 +80,10 @@ export class DeliveryAssignmentService {
 
     // Create delivery request expiring in 30 seconds
     const expiresAt = new Date(Date.now() + 30 * 1000);
+    const currentOrder = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true },
+    });
 
     const [, deliveryRequest] = await this.prisma.$transaction([
       this.prisma.order.update({
@@ -94,13 +98,22 @@ export class DeliveryAssignmentService {
           status: DeliveryRequestStatus.PENDING,
         },
       }),
+      this.prisma.orderEvent.create({
+        data: {
+          orderId,
+          eventType: 'WAITING_FOR_PARTNER',
+          previousStatus: currentOrder?.status,
+          newStatus: OrderStatus.WAITING_FOR_PARTNER,
+          metadata: { deliveryPartnerId: candidate.id },
+        },
+      }),
     ]);
 
     // Fetch full order with relations for the Socket.IO payload
     const fullOrder = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        restaurant: { select: { name: true, address: true, phone: true } },
+        restaurant: { select: { id: true, name: true, address: true, phone: true } },
         customer: { select: { name: true, phone: true } },
         orderItems: true,
       },
@@ -113,6 +126,12 @@ export class DeliveryAssignmentService {
         order: fullOrder,
         expiresAt: expiresAt.toISOString(),
       });
+      this.realtimeGateway.emitOrderUpdate(
+        orderId,
+        fullOrder?.restaurantId || '',
+        'WAITING_FOR_PARTNER',
+        fullOrder,
+      );
     } catch (err: any) {
       this.logger.warn(`Failed to emit delivery:request to partner ${candidate.id}: ${err.message}`);
     }

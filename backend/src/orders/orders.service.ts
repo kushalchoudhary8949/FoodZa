@@ -266,6 +266,11 @@ export class OrdersService {
       throw new ForbiddenException('You can only manage orders for your assigned restaurant');
     }
 
+    // Treat retries from a double-click or a stale panel as successful no-ops.
+    if (order.status === OrderStatus.MANAGER_ACCEPTED) {
+      return order;
+    }
+
     this.validateStatusTransition(order.status, OrderStatus.MANAGER_ACCEPTED);
 
     // Cancel timeout job
