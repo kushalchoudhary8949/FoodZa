@@ -60,22 +60,21 @@ export class DeliveryAssignmentService {
     }
 
     if (!candidate) {
-      // Auto-fallback: Find any active delivery partner and auto-mark them online
-      const anyPartner = await this.prisma.deliveryPartner.findFirst({
-        where: { isActive: true },
-      });
-      if (anyPartner) {
-        candidate = await this.prisma.deliveryPartner.update({
-          where: { id: anyPartner.id },
-          data: { onlineStatus: OnlineStatus.ONLINE, currentOrderId: null },
-        });
-        this.logger.log(`Auto-activated partner ${candidate.id} for order ${orderId}`);
-      }
+      this.logger.warn(`No online delivery partners available for order ${orderId}; assignment will retry when a partner comes online`);
+      return false;
     }
 
-    if (!candidate) {
-      this.logger.warn(`No delivery partners available in database for order ${orderId}`);
-      return false;
+    const existingRequest = await this.prisma.deliveryRequest.findFirst({
+      where: {
+        orderId,
+        deliveryPartnerId: candidate.id,
+        status: DeliveryRequestStatus.PENDING,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (existingRequest) {
+      return true;
     }
 
     // Create delivery request expiring in 30 seconds

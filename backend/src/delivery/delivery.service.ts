@@ -91,35 +91,46 @@ export class DeliveryService {
     const effectiveRequestId = request.id;
     const targetOrderId = request.orderId;
 
-    // 2. Execute atomic updates using batch transaction (PgBouncer-safe)
-    const [updatedOrder] = await this.prisma.$transaction([
-      this.prisma.order.update({
-        where: { id: targetOrderId },
+    // Claim the order conditionally so two partners cannot accept it at once.
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.order.updateMany({
+        where: {
+          id: targetOrderId,
+          status: OrderStatus.WAITING_FOR_PARTNER,
+          deliveryPartnerId: null,
+        },
         data: {
           status: OrderStatus.DELIVERY_ASSIGNED,
           deliveryPartnerId: partnerId,
         },
-        include: {
-          restaurant: { select: { id: true, name: true, phone: true, address: true } },
-          customer: { select: { id: true, name: true, phone: true } },
-          orderItems: true,
-          payment: true,
+      });
+
+      if (claim.count !== 1) {
+        throw new ConflictException('Order has already been accepted by another partner');
+      }
+
+      const requestClaim = await tx.deliveryRequest.updateMany({
+        where: {
+          id: effectiveRequestId,
+          status: DeliveryRequestStatus.PENDING,
+          deliveryPartnerId: partnerId,
         },
-      }),
-      this.prisma.deliveryRequest.update({
-        where: { id: effectiveRequestId },
         data: {
           status: DeliveryRequestStatus.ACCEPTED,
-          deliveryPartnerId: partnerId,
           acceptedAt: new Date(),
           respondedAt: new Date(),
         },
-      }),
-      this.prisma.deliveryPartner.update({
+      });
+
+      if (requestClaim.count !== 1) {
+        throw new ConflictException('Delivery request is no longer pending');
+      }
+
+      await tx.deliveryPartner.update({
         where: { id: partnerId },
         data: { currentOrderId: targetOrderId },
-      }),
-      this.prisma.orderEvent.create({
+      });
+      await tx.orderEvent.create({
         data: {
           orderId: targetOrderId,
           actorUserId: user.id,
@@ -127,8 +138,18 @@ export class DeliveryService {
           previousStatus: request.order.status,
           newStatus: OrderStatus.DELIVERY_ASSIGNED,
         },
-      }),
-    ]);
+      });
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: targetOrderId },
+        include: {
+          restaurant: { select: { id: true, name: true, phone: true, address: true } },
+          customer: { select: { id: true, name: true, phone: true } },
+          orderItems: true,
+          payment: true,
+        },
+      });
+    });
 
     // 3. Cancel any other pending requests for this order
     try {

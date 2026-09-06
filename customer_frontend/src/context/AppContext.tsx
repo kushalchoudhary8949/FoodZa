@@ -208,6 +208,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             });
             if (items.length > 0) setCurrentMenuItems(items);
+            if (items.length > 0) {
+              setCart((prev) => {
+                if (prev.storeId !== selectedStore.id || prev.items.length === 0) {
+                  return prev;
+                }
+
+                const byName = new Map(items.map((item) => [item.name.trim().toLowerCase(), item]));
+                const reconciledItems = prev.items
+                  .map((cartItem) => {
+                    const currentItem = byName.get(cartItem.item.name.trim().toLowerCase());
+                    return currentItem
+                      ? { item: currentItem, quantity: cartItem.quantity }
+                      : null;
+                  })
+                  .filter((item): item is CartItem => item !== null);
+
+                return { ...prev, items: reconciledItems };
+              });
+            }
           }
         })
         .catch((err) => {
@@ -552,19 +571,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsPlacingOrder(true);
 
     try {
-      let createdOrder: any = null;
-      try {
-        createdOrder = await ApiClient.createOrder({
-          restaurantId: cartStore.id,
-          deliveryAddress: details.address,
-          hostelOrPgName: details.hostelOrPg,
-          roomNumber: details.roomNumber,
-          paymentMethod: paymentMethod === 'Cash on Delivery' ? 'CASH_ON_DELIVERY' : 'ONLINE',
-          items: cart.items.map((i) => ({ menuItemId: i.item.id, quantity: i.quantity })),
-        });
-      } catch (backendErr: any) {
-        console.warn('Backend createOrder warning, falling back to local order:', backendErr.message);
-      }
+      const createdOrder: any = await ApiClient.createOrder({
+        restaurantId: cartStore.id,
+        deliveryAddress: details.address,
+        hostelOrPgName: details.hostelOrPg,
+        roomNumber: details.roomNumber,
+        paymentMethod: paymentMethod === 'Cash on Delivery' ? 'CASH_ON_DELIVERY' : 'ONLINE',
+        items: cart.items.map((i) => ({ menuItemId: i.item.id, quantity: i.quantity })),
+      });
 
       const orderId = createdOrder?.id || `FC-${Date.now().toString().slice(-6)}`;
       const orderStatus = (createdOrder?.status as OrderStatus) || 'WAITING_FOR_MANAGER';
@@ -614,8 +628,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return newOrder;
     } catch (err: any) {
       setIsPlacingOrder(false);
-      setIsCheckoutOpen(false);
-      showToast('Order created successfully!', 'success');
+      showToast(err?.message || 'Unable to place order. Please refresh the menu and try again.', 'error');
       return null;
     }
   };

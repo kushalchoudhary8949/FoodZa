@@ -53,31 +53,45 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          ...options,
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      const data = await response.json().catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data.message || data.error || `HTTP error ${response.status}`);
+        if (!response.ok) {
+          const isTransientGatewayError = [502, 503, 504].includes(response.status);
+          if (isTransientGatewayError && attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            continue;
+          }
+          throw new Error(data.message || data.error || `HTTP error ${response.status}`);
+        }
+
+        return (data.data !== undefined ? data.data : data) as T;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        const isTransientNetworkError = err?.name === 'TypeError' || err?.name === 'AbortError';
+        if (isTransientNetworkError && attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
+        if (err?.name === 'AbortError') {
+          throw new Error('Server response timed out after 20 seconds');
+        }
+        throw err;
       }
-
-      return (data.data !== undefined ? data.data : data) as T;
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        throw new Error('Server response timed out after 20 seconds');
-      }
-      throw err;
     }
+
+    throw new Error('Unable to reach the backend');
   }
 
   // Auth
