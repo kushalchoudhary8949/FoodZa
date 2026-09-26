@@ -5,11 +5,18 @@ const rawSocketUrl = import.meta.env.VITE_SOCKET_URL || (isLocal ? 'http://local
 const SOCKET_URL = rawSocketUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 let socket: Socket | null = null;
+let joinedPartnerId: string | null = null;
+
+const joinRooms = (partnerId: string) => {
+  socket?.emit('join:user', { userId: partnerId });
+  socket?.emit('join:delivery-partner', { partnerId });
+  socket?.emit('join:delivery-partners');
+};
 
 export const getPartnerSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
-      autoConnect: true,
+      autoConnect: false,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -20,6 +27,7 @@ export const getPartnerSocket = (): Socket => {
 
     socket.on('connect', () => {
       console.log('[Socket.IO] Delivery partner connected:', socket?.id);
+      if (joinedPartnerId) joinRooms(joinedPartnerId);
     });
 
     socket.on('connect_error', (err) => {
@@ -34,21 +42,10 @@ export const getPartnerSocket = (): Socket => {
 };
 
 export const joinPartnerRoom = (partnerId: string) => {
+  joinedPartnerId = partnerId;
   const s = getPartnerSocket();
-
-  // Join partner room, user room, and general delivery-partners broadcast room
-  s.emit('join:user', { userId: partnerId });
-  s.emit('join:delivery-partner', { partnerId });
-  s.emit('join:delivery-partners');
-
-  // Re-join rooms on reconnect
-  s.off('connect'); // Remove previous listeners to avoid duplicates
-  s.on('connect', () => {
-    console.log('[Socket.IO] Reconnected, re-joining partner rooms');
-    s.emit('join:user', { userId: partnerId });
-    s.emit('join:delivery-partner', { partnerId });
-    s.emit('join:delivery-partners');
-  });
+  if (s.connected) joinRooms(partnerId);
+  else s.connect();
 };
 
 export const subscribeToDeliveryRequests = (callback: (data: any) => void) => {

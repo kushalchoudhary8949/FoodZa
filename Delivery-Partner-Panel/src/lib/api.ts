@@ -13,6 +13,7 @@ class ApiClient {
   private token: string | null = null;
   private cachedPartner: PartnerProfile | null = null;
   private cachedActiveOrder: Order | null = null;
+  private cachedIncomingRequest: Order | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -21,7 +22,13 @@ class ApiClient {
   }
 
   setToken(token: string | null) {
-    this.token = token ? normalizePartnerToken(token) : null;
+    const nextToken = token ? normalizePartnerToken(token) : null;
+    if (this.token !== nextToken) {
+      this.cachedPartner = null;
+      this.cachedActiveOrder = null;
+      this.cachedIncomingRequest = null;
+    }
+    this.token = nextToken;
     if (typeof window !== 'undefined') {
       if (this.token) {
         localStorage.setItem('dp_token', this.token);
@@ -215,15 +222,17 @@ class ApiClient {
     totalDeliveries: number;
   }> {
     const profileRes = await this.getProfile();
-    let incomingRequest: Order | null = null;
-    let activeOrder: Order | null = null;
+    let incomingRequest = this.cachedIncomingRequest;
+    let activeOrder = this.cachedActiveOrder;
 
     try {
       const reqs: any[] = await this.request('/delivery-partners/my-requests');
-      if (reqs && reqs.length > 0 && reqs[0].order) {
-        incomingRequest = this.mapOrder(reqs[0].order);
-      }
-    } catch {}
+      const pending = reqs?.find((request: any) => request.order);
+      incomingRequest = pending ? this.mapOrder(pending.order) : null;
+      this.cachedIncomingRequest = incomingRequest;
+    } catch (error) {
+      console.error('Failed to refresh pending delivery requests:', error);
+    }
 
     try {
       const deliveries: any[] = await this.request('/delivery-partners/my-deliveries');
@@ -233,9 +242,10 @@ class ApiClient {
           activeOrder = this.mapOrder(active);
         }
       }
-    } catch {}
-
-    this.cachedActiveOrder = activeOrder;
+      this.cachedActiveOrder = activeOrder;
+    } catch (error) {
+      console.error('Failed to refresh active deliveries:', error);
+    }
 
     return {
       partner: profileRes.partner,

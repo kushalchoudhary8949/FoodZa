@@ -16,20 +16,32 @@ export class DeliveryAssignmentService {
    * Find eligible online delivery partners and send a delivery request
    */
   async assignDelivery(orderId: string, targetPartnerId?: string): Promise<boolean> {
+    const currentOrder = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, deliveryPartnerId: true },
+    });
+    if (
+      !currentOrder ||
+      (currentOrder.status !== OrderStatus.READY_FOR_PICKUP &&
+        currentOrder.status !== OrderStatus.WAITING_FOR_PARTNER) ||
+      currentOrder.deliveryPartnerId
+    ) {
+      return false;
+    }
+
     let candidate: any = null;
 
     if (targetPartnerId) {
       candidate = await this.prisma.deliveryPartner.findUnique({
         where: { id: targetPartnerId },
       });
-      if (candidate) {
-        // Ensure candidate partner is active and online
-        if (!candidate.isActive || candidate.onlineStatus !== OnlineStatus.ONLINE) {
-          candidate = await this.prisma.deliveryPartner.update({
-            where: { id: targetPartnerId },
-            data: { isActive: true, onlineStatus: OnlineStatus.ONLINE, currentOrderId: null },
-          });
-        }
+      if (
+        candidate &&
+        (!candidate.isActive ||
+          candidate.onlineStatus !== OnlineStatus.ONLINE ||
+          candidate.currentOrderId)
+      ) {
+        candidate = null;
       }
     }
 
@@ -64,27 +76,37 @@ export class DeliveryAssignmentService {
       return false;
     }
 
+    const pendingRequests = await this.prisma.deliveryRequest.findMany({
+      where: { orderId, status: DeliveryRequestStatus.PENDING },
+      include: { deliveryPartner: { select: { onlineStatus: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
     const existingRequest = await this.prisma.deliveryRequest.findFirst({
       where: {
         orderId,
         deliveryPartnerId: candidate.id,
         status: DeliveryRequestStatus.PENDING,
       },
-      select: { id: true },
+      select: { id: true, expiresAt: true },
     });
     if (existingRequest) {
+      await this.notifyPartner(candidate.id, orderId, existingRequest.id, existingRequest.expiresAt);
       return true;
+    }
+    if (pendingRequests.some((request) => request.deliveryPartner.onlineStatus === OnlineStatus.ONLINE)) {
+      this.logger.log(`Keeping existing pending offer for order ${orderId}; its partner is still online`);
+      return false;
     }
 
     // The required legacy expiry field is retained, but pending requests remain
     // available until the partner accepts or rejects them.
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const currentOrder = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { status: true },
-    });
-
-    const [, deliveryRequest] = await this.prisma.$transaction([
+    const currentStatus = currentOrder.status;
+    const [, , deliveryRequest] = await this.prisma.$transaction([
+      this.prisma.deliveryRequest.updateMany({
+        where: { orderId, status: DeliveryRequestStatus.PENDING },
+        data: { status: DeliveryRequestStatus.CANCELLED },
+      }),
       this.prisma.order.update({
         where: { id: orderId },
         data: { status: OrderStatus.WAITING_FOR_PARTNER },
@@ -101,41 +123,46 @@ export class DeliveryAssignmentService {
         data: {
           orderId,
           eventType: 'WAITING_FOR_PARTNER',
-          previousStatus: currentOrder?.status,
+          previousStatus: currentStatus,
           newStatus: OrderStatus.WAITING_FOR_PARTNER,
           metadata: { deliveryPartnerId: candidate.id },
         },
       }),
     ]);
 
-    // Fetch full order with relations for the Socket.IO payload
-    const fullOrder = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        restaurant: { select: { id: true, name: true, address: true, phone: true } },
-        customer: { select: { name: true, phone: true } },
-        orderItems: true,
-      },
-    });
-
-    // Emit real-time delivery request to the assigned partner
-    try {
-      this.realtimeGateway.emitDeliveryRequest(candidate.id, {
-        requestId: deliveryRequest.id,
-        order: fullOrder,
-        expiresAt: expiresAt.toISOString(),
-      });
-      this.realtimeGateway.emitOrderUpdate(
-        orderId,
-        fullOrder?.restaurantId || '',
-        'WAITING_FOR_PARTNER',
-        fullOrder,
-      );
-    } catch (err: any) {
-      this.logger.warn(`Failed to emit delivery:request to partner ${candidate.id}: ${err.message}`);
-    }
+    await this.notifyPartner(candidate.id, orderId, deliveryRequest.id, expiresAt);
 
     this.logger.log(`Delivery request for order ${orderId} sent to partner ${candidate.id}`);
     return true;
+  }
+
+  private async notifyPartner(
+    partnerId: string,
+    orderId: string,
+    requestId: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          restaurant: { select: { id: true, name: true, address: true, phone: true } },
+          customer: { select: { name: true, phone: true } },
+          orderItems: true,
+        },
+      });
+      if (!order) {
+        this.logger.error(`Cannot notify partner ${partnerId}: order ${orderId} was not found`);
+        return;
+      }
+
+      this.realtimeGateway.emitDeliveryRequest(partnerId, {
+        requestId,
+        order,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (err) {
+      this.logger.error(`Failed to notify partner ${partnerId} about request ${requestId}: ${(err as Error).message}`);
+    }
   }
 }

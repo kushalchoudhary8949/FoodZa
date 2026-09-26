@@ -32,9 +32,8 @@ export default function App() {
       setActiveOrder(isStillActive ? data.activeOrder : null);
       setIncomingRequest(data.incomingRequest);
       setAvailableOrdersCount(data.availableOrdersCount);
-    } catch {
-      // Token might be invalid or expired
-      setPartner(null);
+    } catch (error) {
+      console.error('Failed to refresh delivery partner dashboard:', error);
     } finally {
       setIsLoadingAuth(false);
     }
@@ -50,7 +49,7 @@ export default function App() {
 
     const interval = setInterval(() => {
       void refreshDashboard();
-    }, 8000); // Reduced frequency since we now have Socket.IO push
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [partner?.isOnline, refreshDashboard]);
@@ -60,7 +59,6 @@ export default function App() {
     if (!partner) return;
 
     const partnerId = partner.id;
-    joinPartnerRoom(partnerId);
 
     const unsubRequests = subscribeToDeliveryRequests((data: any) => {
       console.log('[Socket.IO] Incoming delivery request:', data);
@@ -79,27 +77,16 @@ export default function App() {
 
     const unsubUpdates = subscribeToOrderUpdates((data: any) => {
       console.log('[Socket.IO] Order update received on delivery panel:', data);
-      if (
-        (data.status === 'READY_FOR_PICKUP' || data.status === 'WAITING_FOR_PARTNER') &&
-        data.payload
-      ) {
-        soundManager.playNewOrderAlert();
-        try {
-          const mapped = api.mapOrder(data.payload);
-          setIncomingRequest(mapped);
-          setAvailableOrdersCount((prev) => Math.max(prev, 1));
-        } catch {
-          setIncomingRequest(data.payload);
-        }
-      }
       void refreshDashboard();
     });
+
+    joinPartnerRoom(partnerId);
 
     return () => {
       unsubRequests();
       unsubUpdates();
     };
-  }, [partner, refreshDashboard]);
+  }, [partner?.id, refreshDashboard]);
 
   // Handler: Login Success
   const handleLoginSuccess = (profile: PartnerProfile) => {

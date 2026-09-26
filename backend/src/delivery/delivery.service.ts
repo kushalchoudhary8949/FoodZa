@@ -470,7 +470,7 @@ export class DeliveryService {
     });
 
     if (status === OnlineStatus.ONLINE && !partner.currentOrderId) {
-      const readyOrder = await this.prisma.order.findFirst({
+      const readyOrders = await this.prisma.order.findMany({
         where: {
           status: { in: [OrderStatus.READY_FOR_PICKUP, OrderStatus.WAITING_FOR_PARTNER] },
           deliveryPartnerId: null,
@@ -478,8 +478,15 @@ export class DeliveryService {
         orderBy: { createdAt: 'asc' },
       });
 
-      if (readyOrder) {
-        await this.assignmentService.assignDelivery(readyOrder.id, partnerId);
+      for (const readyOrder of readyOrders) {
+        const pendingOffer = await this.prisma.deliveryRequest.findFirst({
+          where: { orderId: readyOrder.id, status: DeliveryRequestStatus.PENDING },
+          include: { deliveryPartner: { select: { onlineStatus: true } } },
+        });
+        if (pendingOffer?.deliveryPartner.onlineStatus === OnlineStatus.ONLINE) continue;
+
+        const assigned = await this.assignmentService.assignDelivery(readyOrder.id, partnerId);
+        if (assigned) break;
       }
     }
 
@@ -518,6 +525,7 @@ export class DeliveryService {
           },
         },
       },
+      orderBy: { createdAt: 'asc' },
     });
   }
 

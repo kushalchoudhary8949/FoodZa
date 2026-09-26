@@ -88,17 +88,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to('admin').emit('order:updated', data);
     this.logger.log(`Emitted order:updated for ${orderId} (${status})`);
 
-    // As soon as food is ready / waiting for partner, notify delivery partners immediately
-    if (status === 'READY_FOR_PICKUP' || status === 'WAITING_FOR_PARTNER') {
-      const deliveryPayload = {
-        requestId: orderId,
-        order: payload,
-        expiresAt: new Date(Date.now() + 60 * 1000).toISOString(),
-      };
-      this.server.to('delivery-partners').emit('delivery:request', deliveryPayload);
-      this.server.emit('delivery:request', deliveryPayload);
-      this.logger.log(`Broadcast delivery:request to delivery-partners for ready order ${orderId}`);
-    }
   }
 
   /**
@@ -131,13 +120,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
-   * Emit delivery request alert to a specific delivery partner and broadcast to all delivery partners
+   * Emit a delivery request alert to the partner assigned to the pending request.
    */
   emitDeliveryRequest(partnerId: string, requestData: any) {
     this.server.to(`delivery-partner:${partnerId}`).emit('delivery:request', requestData);
-    this.server.to('delivery-partners').emit('delivery:request', requestData);
-    this.server.emit('delivery:request', requestData);
-    this.logger.log(`Emitted delivery:request to delivery-partner:${partnerId} and broadcast`);
+    this.logger.log(`Emitted delivery:request to delivery-partner:${partnerId}`);
   }
 
   /**
