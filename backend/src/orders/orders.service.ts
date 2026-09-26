@@ -374,13 +374,6 @@ export class OrdersService {
     // Emit real-time update
     this.realtimeGateway.emitOrderUpdate(orderId, order.restaurantId, 'ADMIN_ACCEPTED', updated);
 
-    // Admin accepted a timed-out order → auto-transition to PREPARING and trigger delivery assignment
-    try {
-      await this.deliveryAssignment.assignDelivery(orderId);
-    } catch (assignErr: any) {
-      this.logger.warn(`Delivery assignment after admin accept failed for ${orderId}: ${assignErr.message}`);
-    }
-
     return updated;
   }
 

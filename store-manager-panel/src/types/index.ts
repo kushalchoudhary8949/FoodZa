@@ -1,6 +1,7 @@
 export type OrderStatus =
   | 'WAITING_FOR_MANAGER'
   | 'MANAGER_ACCEPTED'
+  | 'ADMIN_ACCEPTED'
   | 'PREPARING'
   | 'READY_FOR_PICKUP'
   | 'WAITING_FOR_PARTNER'

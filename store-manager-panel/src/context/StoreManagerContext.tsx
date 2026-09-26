@@ -336,6 +336,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const activeOrders = storeOrders.filter(
     (o) =>
       o.status === 'MANAGER_ACCEPTED' ||
+      o.status === 'ADMIN_ACCEPTED' ||
       o.status === 'PREPARING' ||
       o.status === 'READY_FOR_PICKUP' ||
       o.status === 'WAITING_FOR_PARTNER' ||

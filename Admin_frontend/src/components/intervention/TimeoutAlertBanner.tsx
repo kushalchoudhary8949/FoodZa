@@ -1,6 +1,6 @@
 import React from 'react';
 import { useIntervention } from '../../context/InterventionContext';
-import { AlertTriangle, ChevronRight, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { Button } from '../common/Button';
 
 export const TimeoutAlertBanner: React.FC = () => {
@@ -50,34 +50,5 @@ export const TimeoutAlertBanner: React.FC = () => {
         </Button>
       </div>
     </div>
-  );
-};
-
-export const DemoTimeoutTriggerButton: React.FC = () => {
-  const { simulateTimeout } = useIntervention();
-  const [isSimulating, setIsSimulating] = React.useState(false);
-
-  const handleSimulate = async () => {
-    setIsSimulating(true);
-    try {
-      await simulateTimeout();
-    } finally {
-      setIsSimulating(false);
-    }
-  };
-
-  return (
-    <Button
-      id="simulate-timeout-btn"
-      variant="outline"
-      size="sm"
-      onClick={handleSimulate}
-      isLoading={isSimulating}
-      leftIcon={<ShieldAlert className="w-3.5 h-3.5 text-amber-600" />}
-      className="text-xs border-amber-300 bg-amber-50/50 hover:bg-amber-100 text-amber-900"
-      title="Trigger mock manager timeout to test Admin Intervention flow"
-    >
-      Test Timeout Alert
-    </Button>
   );
 };

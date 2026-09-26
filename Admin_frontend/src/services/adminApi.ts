@@ -1,5 +1,5 @@
 const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-bckend.onrender.com/api');
+const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:4000/api' : 'https://foodza-bckend.onrender.com/api');
 const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 export class AdminApiClient {
@@ -129,7 +129,13 @@ export class AdminApiClient {
 
   // ── Orders ──
   static async getAllOrders(query: any = {}) {
-    const params = new URLSearchParams(query).toString();
+    const searchParams = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, String(value));
+      }
+    });
+    const params = searchParams.toString();
     return this.request<any[]>(`/orders/admin/all${params ? `?${params}` : ''}`);
   }
 

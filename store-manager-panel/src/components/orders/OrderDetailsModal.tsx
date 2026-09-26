@@ -36,7 +36,7 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   if (!order || !currentStore) return null;
 
-  const isAccepted = order.status === 'MANAGER_ACCEPTED';
+  const isAccepted = order.status === 'MANAGER_ACCEPTED' || order.status === 'ADMIN_ACCEPTED';
   const isPreparing = order.status === 'PREPARING';
   const isReady =
     order.status === 'READY_FOR_PICKUP' ||
@@ -64,6 +64,7 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
       case 'WAITING_FOR_MANAGER':
       case 'PENDING_MANAGER_ACCEPTANCE': return 0;
       case 'MANAGER_ACCEPTED': return 1;
+      case 'ADMIN_ACCEPTED': return 1;
       case 'PREPARING': return 2;
       case 'READY_FOR_PICKUP':
       case 'WAITING_FOR_PARTNER':

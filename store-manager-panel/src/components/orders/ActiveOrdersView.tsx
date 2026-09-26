@@ -42,7 +42,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
 
   const filteredOrders = activeOrders.filter((order) => {
     // Tab filter
-    if (filterTab === 'ACCEPTED' && order.status !== 'MANAGER_ACCEPTED') return false;
+    if (filterTab === 'ACCEPTED' && order.status !== 'MANAGER_ACCEPTED' && order.status !== 'ADMIN_ACCEPTED') return false;
     if (filterTab === 'PREPARING' && order.status !== 'PREPARING') return false;
     if (
       filterTab === 'READY' &&
@@ -110,7 +110,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            To Start ({activeOrders.filter((o) => o.status === 'MANAGER_ACCEPTED').length})
+            To Start ({activeOrders.filter((o) => o.status === 'MANAGER_ACCEPTED' || o.status === 'ADMIN_ACCEPTED').length})
           </button>
 
           <button
@@ -175,7 +175,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {filteredOrders.map((order) => {
-            const isAccepted = order.status === 'MANAGER_ACCEPTED';
+            const isAccepted = order.status === 'MANAGER_ACCEPTED' || order.status === 'ADMIN_ACCEPTED';
             const isPreparing = order.status === 'PREPARING';
             const isReady =
               order.status === 'READY_FOR_PICKUP' ||

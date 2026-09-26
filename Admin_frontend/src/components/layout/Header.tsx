@@ -13,7 +13,6 @@ import {
   ExternalLink,
   Sparkles,
 } from 'lucide-react';
-import { DemoTimeoutTriggerButton } from '../intervention/TimeoutAlertBanner';
 
 interface HeaderProps {
   currentTab: NavTab;
@@ -82,11 +81,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onOpenMobileNav, onS
         </div>
       </div>
 
-      {/* Right: Quick simulation button, Urgent Notifications Bell & Profile dropdown */}
+      {/* Right: Urgent Notifications Bell & Profile dropdown */}
       <div className="flex items-center gap-2.5 sm:gap-3">
-        {/* Mock Timeout Test Action */}
-        <DemoTimeoutTriggerButton />
-
         {/* Notifications Dropdown */}
         <div className="relative">
           <button

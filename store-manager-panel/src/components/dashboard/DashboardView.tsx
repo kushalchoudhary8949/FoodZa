@@ -264,7 +264,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {activeOrders.slice(0, 3).map((order) => {
-              const isAccepted = order.status === 'MANAGER_ACCEPTED';
+              const isAccepted = order.status === 'MANAGER_ACCEPTED' || order.status === 'ADMIN_ACCEPTED';
               const isPreparing = order.status === 'PREPARING';
               const isReady =
                 order.status === 'READY_FOR_PICKUP' ||
