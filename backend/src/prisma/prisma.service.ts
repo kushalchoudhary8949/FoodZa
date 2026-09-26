@@ -26,7 +26,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       } catch (err: any) {
         this.logger.error(`PostgreSQL connection attempt ${attempt}/3 failed: ${err.message}`);
         if (attempt === 3) {
-          this.logger.error('All connection attempts failed — proceeding with lazy connect');
+          this.logger.error('All PostgreSQL connection attempts failed — refusing to start');
+          throw err;
         } else {
           await new Promise((r) => setTimeout(r, attempt * 2000));
         }

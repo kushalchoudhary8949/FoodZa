@@ -10,8 +10,6 @@ import {
   IssueCategory,
   IssuePriority,
   NotificationItem,
-  OrderItem,
-  PaymentMethod,
 } from '../types';
 import { storage } from '../utils/storage';
 import { soundAlerts } from '../utils/audio';
@@ -43,7 +41,7 @@ interface StoreManagerContextType {
   rejectOrder: (orderId: string, reason?: string) => void;
   startPreparingOrder: (orderId: string) => void;
   markFoodReady: (orderId: string) => void;
-  simulateIncomingOrder: (customItems?: OrderItem[]) => Order | null;
+  pendingOrderActions: Set<string>;
   dismissIncomingPopup: () => void;
 
   // Menu Management
@@ -105,6 +103,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const [incomingOrderId, setIncomingOrderId] = useState<string | null>(null);
   const [incomingOrderTimeRemaining, setIncomingOrderTimeRemaining] = useState<number>(60);
+  const [pendingOrderActions, setPendingOrderActions] = useState<Set<string>>(new Set());
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const soundIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -387,6 +386,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const acceptOrder = useCallback(async (orderId: string) => {
     if (orderActionIdsRef.current.has(orderId)) return;
     orderActionIdsRef.current.add(orderId);
+    setPendingOrderActions((prev) => new Set(prev).add(orderId));
 
     if (timerRef.current) clearInterval(timerRef.current);
     if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
@@ -404,6 +404,11 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.warn('Accept API warning:', err.message);
     } finally {
       orderActionIdsRef.current.delete(orderId);
+      setPendingOrderActions((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   }, [refreshBackendData]);
 
@@ -411,6 +416,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const rejectOrder = useCallback(async (orderId: string, reason = 'Kitchen overloaded') => {
     if (orderActionIdsRef.current.has(orderId)) return;
     orderActionIdsRef.current.add(orderId);
+    setPendingOrderActions((prev) => new Set(prev).add(orderId));
 
     if (timerRef.current) clearInterval(timerRef.current);
     if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
@@ -428,12 +434,18 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.warn('Reject API warning:', err.message);
     } finally {
       orderActionIdsRef.current.delete(orderId);
+      setPendingOrderActions((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   }, [refreshBackendData]);
 
   const startPreparingOrder = useCallback(async (orderId: string) => {
     if (orderActionIdsRef.current.has(orderId)) return;
     orderActionIdsRef.current.add(orderId);
+    setPendingOrderActions((prev) => new Set(prev).add(orderId));
     soundAlerts.playSuccessChime();
     try {
       await ManagerApiClient.startPreparingOrder(orderId);
@@ -442,15 +454,22 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       );
       await refreshBackendData();
     } catch (err: any) {
-      console.warn('Start preparing API warning:', err.message);
+      console.error('Start preparing failed:', err);
+      window.alert(err?.message || 'Unable to start preparing this order. Please refresh and try again.');
     } finally {
       orderActionIdsRef.current.delete(orderId);
+      setPendingOrderActions((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   }, [refreshBackendData]);
 
   const markFoodReady = useCallback(async (orderId: string) => {
     if (orderActionIdsRef.current.has(orderId)) return;
     orderActionIdsRef.current.add(orderId);
+    setPendingOrderActions((prev) => new Set(prev).add(orderId));
     soundAlerts.playSuccessChime();
     try {
       await ManagerApiClient.markFoodReady(orderId);
@@ -459,9 +478,15 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       );
       await refreshBackendData();
     } catch (err: any) {
-      console.warn('Food ready API warning:', err.message);
+      console.error('Food ready failed:', err);
+      window.alert(err?.message || 'Unable to mark this order ready. Please refresh and try again.');
     } finally {
       orderActionIdsRef.current.delete(orderId);
+      setPendingOrderActions((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
     }
   }, [refreshBackendData]);
 
@@ -570,7 +595,6 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const simulateAdminReply = () => {};
   const dismissIncomingPopup = () => setIncomingOrderId(null);
-  const simulateIncomingOrder = () => null;
 
   const markNotificationAsRead = (id: string) => {
     setAllNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
@@ -626,7 +650,6 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         rejectOrder,
         startPreparingOrder,
         markFoodReady,
-        simulateIncomingOrder,
         dismissIncomingPopup,
 
         foodItems: storeFoodItems,
@@ -645,6 +668,7 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         simulateAdminReply,
 
         notifications: storeNotifications,
+        pendingOrderActions,
         unreadNotificationCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,

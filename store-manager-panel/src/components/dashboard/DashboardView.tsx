@@ -6,7 +6,6 @@ import {
   TrendingUp,
   CheckCircle2,
   AlertCircle,
-  Zap,
   ArrowUpRight,
   Utensils,
   ChevronRight,
@@ -35,7 +34,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
     orders,
     startPreparingOrder,
     markFoodReady,
-    simulateIncomingOrder,
+    pendingOrderActions,
     toggleStoreStatus,
   } = useStoreManager();
 
@@ -93,14 +92,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
               {currentStore.isOpen ? 'Toggle Close Store' : 'Open Store Now'}
             </button>
 
-            <button
-              type="button"
-              onClick={() => simulateIncomingOrder()}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
-            >
-              <Zap className="w-4 h-4 fill-slate-950" />
-              <span>Simulate Order #FC1024</span>
-            </button>
           </div>
         </div>
 
@@ -269,13 +260,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
             <p className="text-xs text-slate-500 mt-0.5">
               New customer orders will automatically trigger sound & alert popup.
             </p>
-            <button
-              onClick={() => simulateIncomingOrder()}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              Simulate Incoming Order
-            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -366,10 +350,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
                       <button
                         type="button"
                         onClick={() => startPreparingOrder(order.id)}
+                        disabled={pendingOrderActions.has(order.id)}
                         className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
                       >
                         <ChefHat className="w-3.5 h-3.5" />
-                        [ START PREPARING ]
+                        {pendingOrderActions.has(order.id) ? '[ UPDATING... ]' : '[ START PREPARING ]'}
                       </button>
                     )}
 
@@ -377,10 +362,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveNav }) =>
                       <button
                         type="button"
                         onClick={() => markFoodReady(order.id)}
+                        disabled={pendingOrderActions.has(order.id)}
                         className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        [ FOOD READY ]
+                        {pendingOrderActions.has(order.id) ? '[ UPDATING... ]' : '[ FOOD READY ]'}
                       </button>
                     )}
 

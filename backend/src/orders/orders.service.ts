@@ -427,6 +427,10 @@ export class OrdersService {
       throw new ForbiddenException('Not your store order');
     }
 
+    if (order.status === OrderStatus.PREPARING) {
+      return order;
+    }
+
     this.validateStatusTransition(order.status, OrderStatus.PREPARING);
 
     const [updated] = await this.prisma.$transaction([
@@ -459,6 +463,14 @@ export class OrdersService {
     const order = await this.getOrderOrThrow(orderId);
     if (user.role === UserRole.MANAGER && order.restaurantId !== user.restaurantId) {
       throw new ForbiddenException('Not your store order');
+    }
+
+    if (
+      order.status === OrderStatus.READY_FOR_PICKUP ||
+      order.status === OrderStatus.WAITING_FOR_PARTNER ||
+      order.status === OrderStatus.DELIVERY_ASSIGNED
+    ) {
+      return order;
     }
 
     this.validateStatusTransition(order.status, OrderStatus.READY_FOR_PICKUP);

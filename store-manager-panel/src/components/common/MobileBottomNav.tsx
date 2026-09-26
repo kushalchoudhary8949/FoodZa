@@ -13,7 +13,6 @@ import {
   LogOut,
   X,
   History,
-  Zap,
   Volume2,
   VolumeX,
   ChevronRight
@@ -36,7 +35,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     issues,
     currentStore,
     toggleStoreStatus,
-    simulateIncomingOrder,
     isSoundMuted,
     toggleSoundMute,
     logout,
@@ -163,7 +161,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             </div>
 
             {/* Quick Actions Grid */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -182,20 +180,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                 </span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  simulateIncomingOrder();
-                  setIsMoreDrawerOpen(false);
-                }}
-                className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-left flex flex-col justify-between cursor-pointer"
-              >
-                <span className="text-[10px] uppercase font-bold text-slate-500">Test Simulator</span>
-                <span className="text-xs font-black mt-1 flex items-center gap-1">
-                  <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
-                  Simulate Order
-                </span>
-              </button>
             </div>
 
             {/* More Menu Items */}

@@ -13,7 +13,6 @@ import {
   Phone,
   MapPin,
   Sparkles,
-  Zap,
   ArrowRight,
   PackageCheck,
   ShoppingBag
@@ -32,7 +31,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
     activeOrders,
     startPreparingOrder,
     markFoodReady,
-    simulateIncomingOrder,
+    pendingOrderActions,
   } = useStoreManager();
 
   const [selectedKOTOrder, setSelectedKOTOrder] = useState<Order | null>(null);
@@ -84,15 +83,6 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
           </p>
         </div>
 
-        {/* Action button to simulate order */}
-        <button
-          type="button"
-          onClick={() => simulateIncomingOrder()}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-sm cursor-pointer transition-all active:scale-95 shrink-0"
-        >
-          <Zap className="w-4 h-4 fill-slate-950" />
-          <span>Simulate Incoming Order</span>
-        </button>
       </div>
 
       {/* Filter Tabs & Search Bar */}
@@ -181,13 +171,6 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
             {searchQuery ? 'Try clearing your search query' : 'Kitchen is all caught up with current orders!'}
           </p>
-          <button
-            onClick={() => simulateIncomingOrder()}
-            className="mt-4 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-sm"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            Place Demo Order Now
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -342,10 +325,11 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                     <button
                       type="button"
                       onClick={() => startPreparingOrder(order.id)}
+                      disabled={pendingOrderActions.has(order.id)}
                       className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
                     >
                       <ChefHat className="w-4 h-4" />
-                      [ START PREPARING ]
+                      {pendingOrderActions.has(order.id) ? '[ UPDATING... ]' : '[ START PREPARING ]'}
                     </button>
                   )}
 
@@ -353,10 +337,11 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({ setActiveNav
                     <button
                       type="button"
                       onClick={() => markFoodReady(order.id)}
+                      disabled={pendingOrderActions.has(order.id)}
                       className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
                     >
                       <CheckCircle2 className="w-4 h-4 stroke-[3]" />
-                      [ FOOD READY ]
+                      {pendingOrderActions.has(order.id) ? '[ UPDATING... ]' : '[ FOOD READY ]'}
                     </button>
                   )}
 

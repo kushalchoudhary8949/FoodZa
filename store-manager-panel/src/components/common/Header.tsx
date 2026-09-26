@@ -5,7 +5,6 @@ import {
   Volume2,
   VolumeX,
   Power,
-  Zap,
   ChevronDown,
   Building,
   User,
@@ -35,7 +34,6 @@ export const Header: React.FC<HeaderProps> = ({
     availableStores,
     switchStoreForTesting,
     toggleStoreStatus,
-    simulateIncomingOrder,
     unreadNotificationCount,
     notifications,
     markNotificationAsRead,
@@ -53,15 +51,6 @@ export const Header: React.FC<HeaderProps> = ({
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
-  };
-
-  const handleSimulateOrder = () => {
-    const order = simulateIncomingOrder();
-    if (order) {
-      showToast(`⚡ Demo Order #${order.id} generated! Watch the popup.`);
-    } else {
-      showToast('⚠️ Cannot place order: Store is currently CLOSED.');
-    }
   };
 
   if (!currentStore || !currentManager) return null;
@@ -162,18 +151,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Simulate Order Quick Action */}
-        <button
-          type="button"
-          onClick={handleSimulateOrder}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
-          title="Simulate a new incoming customer order with 60s popup"
-        >
-          <Zap className="w-3.5 h-3.5 text-amber-600 fill-amber-600" />
-          <span className="hidden md:inline">Simulate Order #FC1024</span>
-          <span className="md:hidden">Order</span>
-        </button>
-
         {/* Sound Alert Toggle */}
         <div className="flex items-center">
           <button
