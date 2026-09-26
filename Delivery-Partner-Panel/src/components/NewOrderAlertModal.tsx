@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Store, IndianRupee, Clock, ArrowRight, X } from 'lucide-react';
+import { MapPin, Store, IndianRupee, ArrowRight, X } from 'lucide-react';
 import { Order } from '../types';
 import { soundManager } from '../lib/audio';
 
@@ -17,7 +17,6 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({
   onReject,
   isAccepting = false,
 }) => {
-  const [secondsRemaining, setSecondsRemaining] = useState(45);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('Distance too far');
 
@@ -30,24 +29,6 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({
 
     return () => clearInterval(interval);
   }, []);
-
-  // Timer countdown
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onReject(order.id, 'Timeout - No response');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [order.id, onReject]);
-
-  const percentLeft = (secondsRemaining / 45) * 100;
 
   return (
     <AnimatePresence>
@@ -63,16 +44,6 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({
           id="new-delivery-alert-card"
           className="w-full max-w-md bg-slate-900 border-2 border-amber-500/80 rounded-2xl shadow-2xl shadow-amber-500/20 overflow-hidden text-slate-100 relative"
         >
-          {/* Top Progress bar */}
-          <div className="w-full bg-slate-800 h-2">
-            <div
-              className={`h-full transition-all duration-1000 ease-linear ${
-                secondsRemaining < 15 ? 'bg-rose-500 shadow-[0_0_12px_#f43f5e]' : 'bg-gradient-to-r from-amber-400 to-amber-500 shadow-[0_0_10px_#f59e0b]'
-              }`}
-              style={{ width: `${percentLeft}%` }}
-            />
-          </div>
-
           {/* Header */}
           <div className="p-4 sm:p-5 bg-gradient-to-b from-amber-500/15 to-transparent border-b border-slate-800">
             <div className="flex items-center justify-between">
@@ -85,9 +56,8 @@ export const NewOrderAlertModal: React.FC<NewOrderAlertModalProps> = ({
                   🚨 NEW DELIVERY REQUEST
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950 border border-slate-700 text-xs font-mono font-bold text-amber-300">
-                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                <span>{secondsRemaining}s</span>
+              <div className="px-3 py-1 rounded-full bg-slate-950 border border-slate-700 text-xs font-semibold text-amber-300">
+                Awaiting your response
               </div>
             </div>
 

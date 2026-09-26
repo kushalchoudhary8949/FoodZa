@@ -9,10 +9,6 @@ import {
   Store,
   ArrowRight,
   Clock,
-  Radio,
-  Zap,
-  RotateCcw,
-  CheckCircle2,
   Navigation,
   Compass,
   Sparkles,
@@ -20,16 +16,13 @@ import {
 } from 'lucide-react';
 import { Order, PartnerProfile } from '../types';
 import { api } from '../lib/api';
-import { soundManager } from '../lib/audio';
 
 interface DashboardViewProps {
   partner: PartnerProfile;
   activeOrder: Order | null;
-  incomingRequest: Order | null;
   availableOrdersCount: number;
   onToggleOnline: (isOnline: boolean) => void;
   onNavigateToTab: (tab: 'current_delivery' | 'deliveries' | 'history' | 'earnings') => void;
-  onRefreshDashboard: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -38,12 +31,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   availableOrdersCount,
   onToggleOnline,
   onNavigateToTab,
-  onRefreshDashboard,
 }) => {
   const [isToggling, setIsToggling] = useState(false);
-  const [isDispatching, setIsDispatching] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
-  const [simMessage, setSimMessage] = useState<string | null>(null);
 
   const handleToggle = async (targetState: boolean) => {
     try {
@@ -54,41 +43,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       alert(err.message || 'Failed to update duty status');
     } finally {
       setIsToggling(false);
-    }
-  };
-
-  const handleSimulateNewOrder = async () => {
-    if (!partner.isOnline) {
-      alert('Please switch to Online status first to receive incoming orders.');
-      return;
-    }
-    if (activeOrder) {
-      alert(`You currently have active order #${activeOrder.id}. Complete it first or navigate to the Active Order tab.`);
-      return;
-    }
-    try {
-      setIsDispatching(true);
-      setSimMessage(null);
-      const res = await api.dispatchNewOrder();
-      soundManager.playNewOrderAlert();
-      setSimMessage(`New delivery request #${res.order.id} sent! Review the dispatch alert.`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to dispatch order');
-    } finally {
-      setIsDispatching(false);
-    }
-  };
-
-  const handleResetDemo = async () => {
-    try {
-      setIsResetting(true);
-      await api.resetSimulator();
-      setSimMessage('Demo state reset. Initial sample order #FC1024 loaded.');
-      onRefreshDashboard();
-    } catch (err: any) {
-      alert(err.message || 'Failed to reset demo');
-    } finally {
-      setIsResetting(false);
     }
   };
 
@@ -171,7 +125,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Active Order Highlight if one is ongoing */}
-      {activeOrder && activeOrder.status !== 'DELIVERED' && activeOrder.status !== 'PAYMENT_RECEIVED' && !activeOrder.paymentReceived && (
+      {activeOrder && activeOrder.status !== 'DELIVERED' && activeOrder.status !== 'PAYMENT_RECEIVED' && (
         <div
           id="dashboard-active-order-banner"
           className="bg-slate-900 border-2 border-amber-500/80 rounded-2xl p-5 shadow-2xl shadow-amber-500/15 relative overflow-hidden"
@@ -281,52 +235,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-[11px] text-slate-400 mt-1 font-medium">
             Based on customer ratings
           </div>
-        </div>
-      </div>
-
-      {/* Order Dispatch Simulation Tool */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-              <Zap className="w-4 h-4" />
-            </div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-white">
-              Dispatch Simulator Controls
-            </h3>
-          </div>
-          <span className="text-[11px] text-slate-400">Test incoming assignments & notifications</span>
-        </div>
-
-        {simMessage && (
-          <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            <span>{simMessage}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            id="btn-simulate-dispatch"
-            disabled={isDispatching || !partner.isOnline}
-            onClick={handleSimulateNewOrder}
-            className="py-3 px-4 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Radio className="w-4 h-4 text-amber-400 animate-pulse" />
-            <span>{isDispatching ? 'Sending Alert...' : 'Simulate Incoming Order Alert'}</span>
-          </button>
-
-          <button
-            type="button"
-            id="btn-reset-demo"
-            disabled={isResetting}
-            onClick={handleResetDemo}
-            className="py-3 px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4 text-slate-400" />
-            <span>{isResetting ? 'Resetting...' : 'Reset Demo (Load Sample Order #FC1024)'}</span>
-          </button>
         </div>
       </div>
 

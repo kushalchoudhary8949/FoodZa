@@ -107,14 +107,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
         onOrderUpdated(current);
       }
 
-      // 3. Confirm payment if COD and not paid
-      if (current.paymentMethod === 'COD' && !current.paymentReceived) {
-        const payRes = await api.confirmPayment(current.id);
-        current = payRes.order;
-        onOrderUpdated(current);
-      }
-
-      // 4. Mark completed
+      // 3. Mark completed; payment can remain pending.
       const completeRes = await api.completeDelivery(current.id);
       soundManager.playSuccessSound();
       confetti({
@@ -180,13 +173,19 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
           <div className="grid grid-cols-2 gap-3 mb-5 text-left">
             <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800">
               <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">
-                Cash Collected
+                {finalOrder.paymentReceived
+                  ? finalOrder.paymentMethod === 'COD' ? 'Cash Collected' : 'Paid Online'
+                  : 'Payment Pending'}
               </span>
               <span className="text-xl font-black text-white mt-0.5 block font-mono">
-                ₹{finalOrder.paymentMethod === 'COD' ? finalOrder.amountToCollect : 0}
+                ₹{finalOrder.paymentReceived
+                  ? finalOrder.paymentMethod === 'COD' ? finalOrder.amountToCollect : finalOrder.orderAmount
+                  : 0}
               </span>
               <span className="text-[10px] text-slate-400 block mt-0.5">
-                {finalOrder.paymentMethod === 'COD' ? 'Cash in hand' : 'Prepaid (Online)'}
+                {finalOrder.paymentReceived
+                  ? finalOrder.paymentMethod === 'COD' ? 'Cash received' : 'Payment received online'
+                  : finalOrder.paymentMethod === 'COD' ? 'COD remains outstanding' : 'Payment remains outstanding'}
               </span>
             </div>
 
@@ -312,17 +311,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
       }
       const res = await api.confirmPayment(active.id);
       soundManager.playSuccessSound();
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-      setDeliveredSuccessOrder(res.order);
-      if (res.partner) {
-        onDeliveryCompleted(res.order, res.partner);
-      } else {
-        onOrderUpdated(res.order);
-      }
+      onOrderUpdated(res.order);
     } catch (err: any) {
       alert(err.message || 'Failed to record cash payment');
     } finally {
@@ -334,18 +323,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
     try {
       setIsMarkingDelivered(true);
       if (!isOtpVerified) {
-        try {
-          await api.verifyOtp(active.id, active.secretOtp);
-        } catch {
-          // continue
-        }
-      }
-      if (isCod && !isPaymentDone) {
-        try {
-          await api.confirmPayment(active.id);
-        } catch {
-          // continue
-        }
+        await api.verifyOtp(active.id, active.secretOtp);
       }
       const res = await api.completeDelivery(active.id);
       soundManager.playSuccessSound();
@@ -368,8 +346,8 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
   const isOutForDelivery = active.status === 'OUT_FOR_DELIVERY';
   const isOtpVerified = active.otpVerified || active.status === 'OTP_VERIFIED' || active.status === 'PAYMENT_RECEIVED';
   const isCod = active.paymentMethod === 'COD';
-  const isPaymentDone = !isCod || active.paymentReceived || active.status === 'PAYMENT_RECEIVED';
-  const isReadyToComplete = isOtpVerified && isPaymentDone;
+  const isPaymentDone = active.paymentReceived || active.status === 'PAYMENT_RECEIVED';
+  const isReadyToComplete = isOtpVerified;
 
   return (
     <div id="current-delivery-panel" className="max-w-2xl mx-auto space-y-4 pb-14">
@@ -418,7 +396,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
 
             <div className={`p-2.5 rounded-xl border transition ${isPaymentDone ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold' : isOtpVerified ? 'bg-amber-400/15 border-amber-400 text-amber-300 font-bold' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
               <div className="text-[10px] font-black uppercase tracking-wider">4. Complete</div>
-              <div className="text-[11px] truncate mt-0.5 font-semibold">{isPaymentDone ? '✓ Settled' : 'Pending'}</div>
+              <div className="text-[11px] truncate mt-0.5 font-semibold">{isPaymentDone ? '✓ Paid' : 'Payment Due'}</div>
             </div>
           </div>
         </div>
@@ -429,7 +407,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
             <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 animate-pulse" />
             <div>
               <span className="font-bold text-white block">Need to test or finish quickly?</span>
-              <span className="text-[11px] text-slate-400">Execute all pickup, PIN verification, and cash settlement steps automatically.</span>
+              <span className="text-[11px] text-slate-400">Complete pickup, verify the customer PIN, and finish delivery.</span>
             </div>
           </div>
           <button
@@ -768,7 +746,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
               </div>
 
               <span className={`px-3 py-1 rounded-full text-xs font-black ${isPaymentDone ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'}`}>
-                {isCod ? (isPaymentDone ? 'Cash Collected' : 'Collect Cash') : 'Paid Online'}
+                {isCod ? (isPaymentDone ? 'Cash Collected' : 'Payment Pending') : isPaymentDone ? 'Paid Online' : 'Payment Pending'}
               </span>
             </div>
 
@@ -819,8 +797,12 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
             ) : (
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 flex items-center justify-between">
                 <div>
-                  <span className="text-emerald-400 font-black block">Prepaid Order (Online UPI / Card)</span>
-                  <span className="text-slate-400 text-[11px]">No cash collection needed from customer</span>
+                  <span className={`font-black block ${isPaymentDone ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {isPaymentDone ? 'Prepaid Order (Online UPI / Card)' : 'Online payment pending'}
+                  </span>
+                  <span className="text-slate-400 text-[11px]">
+                    {isPaymentDone ? 'No cash collection needed from customer' : 'Delivery can be completed; payment remains outstanding'}
+                  </span>
                 </div>
                 <span className="font-mono font-black text-white text-base">₹{active.orderAmount}</span>
               </div>
@@ -854,7 +836,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 text-xs">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-300 font-bold uppercase tracking-wider">Required to finish trip:</span>
-                  <span className="text-amber-400 font-semibold">Tap to auto-complete</span>
+                  <span className="text-amber-400 font-semibold">Verify PIN to complete</span>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   {!isOtpVerified && (
@@ -888,7 +870,7 @@ export const CurrentDeliveryView: React.FC<CurrentDeliveryViewProps> = ({
               </div>
             ) : (
               <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center text-xs text-emerald-300 font-semibold">
-                ✓ All requirements met! Click the button above to complete delivery and credit ₹{active.deliveryEarnings} to your wallet.
+                ✓ PIN verified. Payment may remain pending; click above to complete delivery and credit ₹{active.deliveryEarnings} to your wallet.
               </div>
             )}
           </div>

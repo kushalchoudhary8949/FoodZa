@@ -110,64 +110,86 @@ export class DeliveryService {
     }
 
     // Claim the order conditionally so two partners cannot accept it at once.
-    const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      const claim = await tx.order.updateMany({
-        where: {
-          id: targetOrderId,
-          status: OrderStatus.WAITING_FOR_PARTNER,
-          deliveryPartnerId: null,
-        },
-        data: {
-          status: OrderStatus.DELIVERY_ASSIGNED,
-          deliveryPartnerId: partnerId,
-        },
-      });
+    let updatedOrder;
+    try {
+      updatedOrder = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.order.updateMany({
+          where: {
+            id: targetOrderId,
+            status: OrderStatus.WAITING_FOR_PARTNER,
+            deliveryPartnerId: null,
+          },
+          data: {
+            status: OrderStatus.DELIVERY_ASSIGNED,
+            deliveryPartnerId: partnerId,
+          },
+        });
 
-      if (claim.count !== 1) {
-        throw new ConflictException('Order has already been accepted by another partner');
+        if (claim.count !== 1) {
+          throw new ConflictException('Order has already been accepted by another partner');
+        }
+
+        const requestClaim = await tx.deliveryRequest.updateMany({
+          where: {
+            id: effectiveRequestId,
+            status: DeliveryRequestStatus.PENDING,
+            deliveryPartnerId: partnerId,
+          },
+          data: {
+            status: DeliveryRequestStatus.ACCEPTED,
+            acceptedAt: new Date(),
+            respondedAt: new Date(),
+          },
+        });
+
+        if (requestClaim.count !== 1) {
+          throw new ConflictException('Delivery request is no longer pending');
+        }
+
+        await tx.deliveryPartner.update({
+          where: { id: partnerId },
+          data: { currentOrderId: targetOrderId },
+        });
+        await tx.orderEvent.create({
+          data: {
+            orderId: targetOrderId,
+            actorUserId: user.id,
+            eventType: 'DELIVERY_ASSIGNED',
+            previousStatus: request.order.status,
+            newStatus: OrderStatus.DELIVERY_ASSIGNED,
+          },
+        });
+
+        return tx.order.findUniqueOrThrow({
+          where: { id: targetOrderId },
+          include: {
+            restaurant: { select: { id: true, name: true, phone: true, address: true } },
+            customer: { select: { id: true, name: true, phone: true } },
+            orderItems: true,
+            payment: true,
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        const claimedOrder = await this.prisma.order.findUnique({
+          where: { id: targetOrderId },
+          include: {
+            restaurant: { select: { id: true, name: true, phone: true, address: true } },
+            customer: { select: { id: true, name: true, phone: true } },
+            orderItems: true,
+            payment: true,
+          },
+        });
+        if (
+          claimedOrder?.deliveryPartnerId === partnerId &&
+          claimedOrder.status === OrderStatus.DELIVERY_ASSIGNED
+        ) {
+          return { order: claimedOrder, otp: '1234' };
+        }
       }
-
-      const requestClaim = await tx.deliveryRequest.updateMany({
-        where: {
-          id: effectiveRequestId,
-          status: DeliveryRequestStatus.PENDING,
-          deliveryPartnerId: partnerId,
-        },
-        data: {
-          status: DeliveryRequestStatus.ACCEPTED,
-          acceptedAt: new Date(),
-          respondedAt: new Date(),
-        },
-      });
-
-      if (requestClaim.count !== 1) {
-        throw new ConflictException('Delivery request is no longer pending');
-      }
-
-      await tx.deliveryPartner.update({
-        where: { id: partnerId },
-        data: { currentOrderId: targetOrderId },
-      });
-      await tx.orderEvent.create({
-        data: {
-          orderId: targetOrderId,
-          actorUserId: user.id,
-          eventType: 'DELIVERY_ASSIGNED',
-          previousStatus: request.order.status,
-          newStatus: OrderStatus.DELIVERY_ASSIGNED,
-        },
-      });
-
-      return tx.order.findUniqueOrThrow({
-        where: { id: targetOrderId },
-        include: {
-          restaurant: { select: { id: true, name: true, phone: true, address: true } },
-          customer: { select: { id: true, name: true, phone: true } },
-          orderItems: true,
-          payment: true,
-        },
-      });
-    });
+      throw error;
+    }
 
     // 3. Cancel any other pending requests for this order
     try {
@@ -197,26 +219,49 @@ export class DeliveryService {
    * Delivery Partner rejects a delivery request
    */
   async rejectRequest(requestId: string, partnerId: string, user: AuthenticatedUser) {
-    const request = await this.prisma.deliveryRequest.findUnique({
-      where: { id: requestId },
+    const request = await this.prisma.deliveryRequest.findFirst({
+      where: {
+        OR: [{ id: requestId }, { orderId: requestId }],
+        deliveryPartnerId: partnerId,
+        status: DeliveryRequestStatus.PENDING,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        order: {
+          select: {
+            status: true,
+            deliveryPartnerId: true,
+          },
+        },
+      },
     });
 
-    if (!request || request.deliveryPartnerId !== partnerId) {
+    if (!request) {
       throw new NotFoundException('Delivery request not found');
     }
 
-    if (request.status !== DeliveryRequestStatus.PENDING) {
-      throw new BadRequestException('Request is no longer pending');
+    if (
+      request.order.status !== OrderStatus.WAITING_FOR_PARTNER ||
+      request.order.deliveryPartnerId !== null
+    ) {
+      throw new ConflictException('Delivery request is no longer available');
     }
 
-    await this.prisma.deliveryRequest.update({
-      where: { id: requestId },
+    const rejected = await this.prisma.deliveryRequest.updateMany({
+      where: {
+        id: request.id,
+        status: DeliveryRequestStatus.PENDING,
+      },
       data: {
         status: DeliveryRequestStatus.REJECTED,
         rejectedAt: new Date(),
         respondedAt: new Date(),
       },
     });
+
+    if (rejected.count !== 1) {
+      throw new ConflictException('Delivery request is no longer available');
+    }
 
     // Try finding another eligible partner asynchronously
     this.assignmentService.assignDelivery(request.orderId).catch((err) => {
@@ -341,7 +386,7 @@ export class DeliveryService {
   }
 
   /**
-   * Complete delivery (Enforces OTP + Payment prerequisites!)
+   * Complete delivery after OTP verification. COD settlement can remain pending.
    */
   async completeDelivery(orderId: string, partnerId: string, user: AuthenticatedUser) {
     const order = await this.ensurePartnerOrder(orderId, partnerId);
@@ -358,22 +403,18 @@ export class DeliveryService {
       throw new BadRequestException('Delivery OTP has not been verified by customer');
     }
 
-    // Prerequisite 2: Payment must be PAID
-    const payment = await this.prisma.payment.findUnique({ where: { orderId } });
-    if (!payment || payment.status !== PaymentStatus.PAID) {
-      throw new BadRequestException('Payment has not been completed/collected');
-    }
-
     const deliveryEarning = 40; // Flat delivery pay per order for MVP
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({ where: { orderId } });
+
       // 1. Update Order -> DELIVERED
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.DELIVERED,
           deliveredAt: new Date(),
-          paymentStatus: PaymentStatus.PAID,
+          paymentStatus: payment?.status ?? order.paymentStatus,
         },
       });
 
@@ -462,7 +503,12 @@ export class DeliveryService {
       where: {
         deliveryPartnerId: partnerId,
         status: DeliveryRequestStatus.PENDING,
-        expiresAt: { gt: new Date() },
+        order: {
+          is: {
+            status: OrderStatus.WAITING_FOR_PARTNER,
+            deliveryPartnerId: null,
+          },
+        },
       },
       include: {
         order: {
@@ -473,106 +519,6 @@ export class DeliveryService {
         },
       },
     });
-  }
-
-  /**
-   * Simulate a delivery dispatch for testing — finds or creates an eligible order and triggers assignment
-   */
-  async simulateDispatch(partnerId: string) {
-    // 1. Clear any existing pending requests for this partner so they can receive new ones
-    await this.prisma.deliveryRequest.updateMany({
-      where: {
-        deliveryPartnerId: partnerId,
-        status: DeliveryRequestStatus.PENDING,
-      },
-      data: { status: DeliveryRequestStatus.EXPIRED },
-    });
-
-    // 2. Ensure partner is online and free
-    await this.prisma.deliveryPartner.update({
-      where: { id: partnerId },
-      data: { onlineStatus: OnlineStatus.ONLINE, currentOrderId: null },
-    });
-
-    // 3. Find an order that's ready for delivery assignment
-    let eligibleOrder = await this.prisma.order.findFirst({
-      where: {
-        status: {
-          in: [
-            OrderStatus.MANAGER_ACCEPTED,
-            OrderStatus.ADMIN_ACCEPTED,
-            OrderStatus.PREPARING,
-            OrderStatus.READY_FOR_PICKUP,
-            OrderStatus.WAITING_FOR_PARTNER,
-          ],
-        },
-        deliveryPartnerId: null,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Fallback: If no eligible order, find ANY order and reset it to READY_FOR_PICKUP
-    if (!eligibleOrder) {
-      const anyOrder = await this.prisma.order.findFirst({
-        orderBy: { createdAt: 'desc' },
-      });
-      if (anyOrder) {
-        eligibleOrder = await this.prisma.order.update({
-          where: { id: anyOrder.id },
-          data: {
-            status: OrderStatus.READY_FOR_PICKUP,
-            deliveryPartnerId: null,
-          },
-        });
-        await this.prisma.deliveryRequest.deleteMany({
-          where: { orderId: anyOrder.id },
-        });
-      }
-    }
-
-    // Fallback 2: If no order at all in DB, create a demo order
-    if (!eligibleOrder) {
-      const restaurant = await this.prisma.restaurant.findFirst();
-      const customer = await this.prisma.customer.findFirst();
-      if (restaurant && customer) {
-        const orderNumber = `FC-${Date.now().toString().slice(-6)}`;
-        eligibleOrder = await this.prisma.order.create({
-          data: {
-            orderNumber,
-            customerId: customer.id,
-            restaurantId: restaurant.id,
-            deliveryAddress: 'Hostel 4, Room 204, Campus East',
-            subtotal: 180,
-            deliveryFee: 30,
-            totalAmount: 210,
-            paymentMethod: PaymentMethod.CASH_ON_DELIVERY,
-            paymentStatus: PaymentStatus.PENDING,
-            status: OrderStatus.READY_FOR_PICKUP,
-          },
-        });
-      }
-    }
-
-    if (!eligibleOrder) {
-      throw new NotFoundException('No restaurant or customer found in database to simulate an order.');
-    }
-
-    // Clear previous requests for this partner on this order
-    await this.prisma.deliveryRequest.deleteMany({
-      where: { orderId: eligibleOrder.id, deliveryPartnerId: partnerId },
-    });
-
-    const assigned = await this.assignmentService.assignDelivery(eligibleOrder.id, partnerId);
-
-    if (!assigned) {
-      throw new BadRequestException('Delivery assignment failed — partner could not be assigned');
-    }
-
-    return {
-      success: true,
-      message: `Delivery request dispatched for order ${eligibleOrder.orderNumber || eligibleOrder.id}`,
-      orderId: eligibleOrder.id,
-    };
   }
 
   private async ensurePartnerOrder(orderId: string, partnerId: string) {

@@ -3,28 +3,22 @@ import {
   Bike,
   Navigation,
   Bell,
-  Sparkles,
-  Zap
+  Sparkles
 } from 'lucide-react';
-import { ActiveTab, PartnerProfile, Order } from '../types';
+import { ActiveTab, PartnerProfile } from '../types';
 
 interface NavbarProps {
   partner: PartnerProfile;
   activeTab: ActiveTab;
-  activeOrder: Order | null;
   onSelectTab: (tab: ActiveTab) => void;
   onToggleOnline: (isOnline: boolean) => void;
-  onSimulateOrder: () => void;
-  onResetDemo: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   partner,
   activeTab,
-  activeOrder,
   onSelectTab,
   onToggleOnline,
-  onSimulateOrder,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#090d16]/95 backdrop-blur-md border-b border-slate-800/80">
@@ -53,18 +47,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Quick Simulation Trigger */}
-          <button
-            type="button"
-            onClick={onSimulateOrder}
-            disabled={!partner.isOnline || !!activeOrder}
-            title="Simulate receiving an incoming delivery order"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 disabled:opacity-30 border border-slate-800 text-amber-400 text-xs font-semibold transition cursor-pointer"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Simulate Order</span>
-          </button>
-
           {/* Online/Offline Status Switch Pill */}
           <button
             type="button"
@@ -106,4 +88,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-

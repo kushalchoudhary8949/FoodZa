@@ -55,7 +55,7 @@ export interface TimelineEvent {
 }
 
 export interface Order {
-  id: string; // e.g. "FC1024"
+  id: string;
   store: StoreDetails;
   customer: CustomerDetails;
   items: OrderItem[];

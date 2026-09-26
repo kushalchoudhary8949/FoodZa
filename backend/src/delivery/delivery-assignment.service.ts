@@ -51,7 +51,7 @@ export class DeliveryAssignmentService {
 
       // Filter out partners who previously rejected this order
       const previousRequests = await this.prisma.deliveryRequest.findMany({
-        where: { orderId },
+        where: { orderId, status: DeliveryRequestStatus.REJECTED },
         select: { deliveryPartnerId: true },
       });
       const rejectedPartnerIds = new Set(previousRequests.map((r) => r.deliveryPartnerId));
@@ -69,7 +69,6 @@ export class DeliveryAssignmentService {
         orderId,
         deliveryPartnerId: candidate.id,
         status: DeliveryRequestStatus.PENDING,
-        expiresAt: { gt: new Date() },
       },
       select: { id: true },
     });
@@ -77,8 +76,9 @@ export class DeliveryAssignmentService {
       return true;
     }
 
-    // Create delivery request expiring in 30 seconds
-    const expiresAt = new Date(Date.now() + 30 * 1000);
+    // The required legacy expiry field is retained, but pending requests remain
+    // available until the partner accepts or rejects them.
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const currentOrder = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: { status: true },

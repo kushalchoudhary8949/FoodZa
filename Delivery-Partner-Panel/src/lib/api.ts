@@ -1,7 +1,7 @@
 import { Order, PartnerProfile, EarningsSummary, DeliveryStatus } from '../types';
 
 const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:3000/api' : 'https://foodza-bckend.onrender.com/api');
+const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:4000/api' : 'https://foodza-bckend.onrender.com/api');
 const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 const normalizePartnerToken = (partnerId: string) => {
@@ -13,18 +13,10 @@ class ApiClient {
   private token: string | null = null;
   private cachedPartner: PartnerProfile | null = null;
   private cachedActiveOrder: Order | null = null;
-  private simulatedOrder: Order | null = null;
-  private simulatedActiveOrder: Order | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.token = normalizePartnerToken(localStorage.getItem('dp_token') || 'dp_kiran_01');
-      try {
-        const savedSim = localStorage.getItem('dp_sim_order');
-        if (savedSim) this.simulatedOrder = JSON.parse(savedSim);
-        const savedActive = localStorage.getItem('dp_sim_active');
-        if (savedActive) this.simulatedActiveOrder = JSON.parse(savedActive);
-      } catch {}
     }
   }
 
@@ -73,7 +65,9 @@ class ApiClient {
             await new Promise((resolve) => setTimeout(resolve, 1000));
             continue;
           }
-          throw new Error(data.message || data.error || `HTTP error ${response.status}`);
+          const error = new Error(data.message || data.error || `HTTP error ${response.status}`);
+          Object.assign(error, { status: response.status });
+          throw error;
         }
 
         return (data.data !== undefined ? data.data : data) as T;
@@ -241,13 +235,6 @@ class ApiClient {
       }
     } catch {}
 
-    // Fallback to local simulated orders if backend has none
-    if (!incomingRequest && this.simulatedOrder) {
-      incomingRequest = this.simulatedOrder;
-    }
-    if (!activeOrder && this.simulatedActiveOrder) {
-      activeOrder = this.simulatedActiveOrder;
-    }
     this.cachedActiveOrder = activeOrder;
 
     return {
@@ -264,35 +251,11 @@ class ApiClient {
 
   // Delivery Actions
   async acceptDelivery(orderId: string, fallbackOrder?: Order | null): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
-    if (this.simulatedOrder && this.simulatedOrder.id === orderId) {
-      this.simulatedActiveOrder = {
-        ...this.simulatedOrder,
-        status: 'DELIVERY_ASSIGNED',
-        assignedPartnerId: this.token || 'dp_kiran_01',
-      };
-      this.simulatedOrder = null;
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('dp_sim_order');
-        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
-      }
-      return {
-        success: true,
-        message: 'Delivery request accepted',
-        order: this.simulatedActiveOrder,
-        partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
-      };
-    }
-
     let acceptedOrder: Order | null = null;
-    try {
-      const res: any = await this.request(`/delivery-requests/${orderId}/accept`, { method: 'POST' });
-      const raw = res?.order || res?.data?.order || res;
-      if (raw && raw.id) {
-        acceptedOrder = this.mapOrder(raw);
-      }
-    } catch (e: any) {
-      console.error('Backend acceptDelivery failed:', e.message);
-      throw e;
+    const res: any = await this.request(`/delivery-requests/${orderId}/accept`, { method: 'POST' });
+    const raw = res?.order || res?.data?.order || res;
+    if (raw && raw.id) {
+      acceptedOrder = this.mapOrder(raw);
     }
 
     if (!acceptedOrder) {
@@ -324,13 +287,6 @@ class ApiClient {
   }
 
   async rejectDelivery(orderId: string, _reason?: string): Promise<{ success: boolean; message: string }> {
-    if (this.simulatedOrder && this.simulatedOrder.id === orderId) {
-      this.simulatedOrder = null;
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('dp_sim_order');
-      }
-      return { success: true, message: 'Delivery request rejected' };
-    }
     try {
       await this.request(`/delivery-requests/${orderId}/reject`, { method: 'POST' });
     } catch {}
@@ -338,18 +294,6 @@ class ApiClient {
   }
 
   async pickupOrder(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
-    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
-      this.simulatedActiveOrder = {
-        ...this.simulatedActiveOrder,
-        status: 'PICKED_UP',
-      };
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
-      }
-      this.cachedActiveOrder = this.simulatedActiveOrder;
-      return { success: true, message: 'Order picked up', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
-    }
-
     const raw = await this.request<any>(`/deliveries/${orderId}/pickup`, { method: 'POST' });
     const order = this.mapOrder(raw);
     this.cachedActiveOrder = order;
@@ -357,18 +301,6 @@ class ApiClient {
   }
 
   async outForDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
-    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
-      this.simulatedActiveOrder = {
-        ...this.simulatedActiveOrder,
-        status: 'OUT_FOR_DELIVERY',
-      };
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
-      }
-      this.cachedActiveOrder = this.simulatedActiveOrder;
-      return { success: true, message: 'Order is out for delivery', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
-    }
-
     const raw = await this.request<any>(`/deliveries/${orderId}/out-for-delivery`, { method: 'POST' });
     const order = this.mapOrder(raw);
     this.cachedActiveOrder = order;
@@ -376,23 +308,6 @@ class ApiClient {
   }
 
   async verifyOtp(orderId: string, otp: string): Promise<{ success: boolean; verified: boolean; message: string; order: Order; partner: PartnerProfile }> {
-    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
-      const correct = otp === (this.simulatedActiveOrder.secretOtp || '1234') || otp === '1234' || otp === '5821';
-      if (!correct) {
-        throw new Error('Invalid OTP. Please check with the customer.');
-      }
-      this.simulatedActiveOrder = {
-        ...this.simulatedActiveOrder,
-        otpVerified: true,
-        status: 'OUT_FOR_DELIVERY',
-      };
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
-      }
-      this.cachedActiveOrder = this.simulatedActiveOrder;
-      return { success: true, verified: true, message: 'OTP verified successfully', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
-    }
-
     await this.request(`/deliveries/${orderId}/verify-otp`, {
       method: 'POST',
       body: JSON.stringify({ otp }),
@@ -405,19 +320,6 @@ class ApiClient {
   }
 
   async confirmPayment(orderId: string): Promise<{ success: boolean; message: string; order: Order; partner: PartnerProfile }> {
-    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
-      this.simulatedActiveOrder = {
-        ...this.simulatedActiveOrder,
-        paymentReceived: true,
-        paymentStatus: 'COLLECTED_CASH',
-      };
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('dp_sim_active', JSON.stringify(this.simulatedActiveOrder));
-      }
-      this.cachedActiveOrder = this.simulatedActiveOrder;
-      return { success: true, message: 'COD payment collected', order: this.simulatedActiveOrder, partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }) };
-    }
-
     const amount = this.cachedActiveOrder?.orderAmount || 200;
     await this.request(`/deliveries/${orderId}/payment`, {
       method: 'POST',
@@ -431,21 +333,6 @@ class ApiClient {
   }
 
   async completeDelivery(orderId: string): Promise<{ success: boolean; message: string; order: Order; earningsAdded: number; partner: PartnerProfile }> {
-    if (this.simulatedActiveOrder && this.simulatedActiveOrder.id === orderId) {
-      const completedOrder = this.simulatedActiveOrder;
-      this.simulatedActiveOrder = null;
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('dp_sim_active');
-      }
-      return {
-        success: true,
-        message: 'Order delivered successfully',
-        order: { ...completedOrder, status: 'DELIVERED' },
-        earningsAdded: 40,
-        partner: this.cachedPartner || this.buildPartnerProfile({ id: this.token }),
-      };
-    }
-
     const raw = await this.request<any>(`/deliveries/${orderId}/complete`, { method: 'POST' });
     const order = raw?.id ? this.mapOrder(raw) : {
       ...(this.cachedActiveOrder || this.mapOrder({ id: orderId, status: 'DELIVERED' })),
@@ -487,90 +374,6 @@ class ApiClient {
     };
   }
 
-  async dispatchNewOrder(): Promise<{ success: boolean; message: string; order: Order }> {
-    try {
-      const res: any = await this.request('/delivery-partners/simulate-dispatch', { method: 'POST' });
-      const dash = await this.getDashboard();
-      if (dash.incomingRequest) {
-        return {
-          success: true,
-          message: res?.message || 'Delivery request dispatched by backend',
-          order: dash.incomingRequest,
-        };
-      }
-    } catch (err: any) {
-      console.warn('Backend simulate-dispatch not available, generating realistic simulated order:', err.message);
-    }
-
-    // Build realistic simulated order
-    const orderId = `FC-${Math.floor(1000 + Math.random() * 9000)}`;
-    const sampleOrder: Order = {
-      id: orderId,
-      store: {
-        id: 'store-1',
-        name: 'The Campus Pizzeria & Rolls',
-        phone: '+91 98000 11122',
-        address: 'Food Court, Block 3, Campus Center',
-        landmark: 'Opposite Central Fountain',
-        coordinates: { lat: 28.6139, lng: 77.209 },
-      },
-      customer: {
-        id: 'cust-1',
-        name: 'Rohit Verma',
-        phone: '+91 98765 43210',
-        address: 'Aryabhatta Hostel, Block B',
-        roomOrFloor: 'Room 304, 3rd Floor',
-        coordinates: { lat: 28.6145, lng: 77.2095 },
-      },
-      items: [
-        { id: 'item-1', name: 'Paneer Tikka Roll (Double)', quantity: 1, price: 160, isVeg: true },
-        { id: 'item-2', name: 'Loaded Cheese Fries', quantity: 1, price: 90, isVeg: true },
-        { id: 'item-3', name: 'Fresh Lime Soda', quantity: 1, price: 40, isVeg: true },
-      ],
-      orderAmount: 290,
-      deliveryEarnings: 40,
-      paymentMethod: 'COD',
-      paymentStatus: 'PENDING',
-      amountToCollect: 290,
-      status: 'WAITING_FOR_PARTNER',
-      assignedPartnerId: null,
-      secretOtp: '5821',
-      otpVerified: false,
-      paymentReceived: false,
-      distanceKm: 1.4,
-      estimatedMinutes: 14,
-      createdAt: new Date().toISOString(),
-      timeline: [
-        {
-          status: 'WAITING_FOR_PARTNER',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          title: 'Ready for Pickup',
-          description: 'Food is packed and hot at the store counter',
-        },
-      ],
-    };
-
-    this.simulatedOrder = sampleOrder;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('dp_sim_order', JSON.stringify(sampleOrder));
-    }
-
-    return {
-      success: true,
-      message: `Simulated incoming order #${sampleOrder.id} dispatched!`,
-      order: sampleOrder,
-    };
-  }
-
-  async resetSimulator(): Promise<{ success: boolean; message: string }> {
-    this.simulatedOrder = null;
-    this.simulatedActiveOrder = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('dp_sim_order');
-      localStorage.removeItem('dp_sim_active');
-    }
-    return { success: true, message: 'Simulator state reset' };
-  }
 }
 
 export const api = new ApiClient();

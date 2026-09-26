@@ -24,18 +24,14 @@ export default function App() {
   const [isAcceptingDelivery, setIsAcceptingDelivery] = useState(false);
 
   // Initial Auth Check & Dashboard Fetch
-  const refreshDashboard = useCallback(async (preserveIncomingRequest = false) => {
+  const refreshDashboard = useCallback(async () => {
     try {
       const data = await api.getDashboard();
       setPartner(data.partner);
-      const isStillActive = data.activeOrder && data.activeOrder.status !== 'DELIVERED' && !data.activeOrder.paymentReceived;
+      const isStillActive = data.activeOrder && data.activeOrder.status !== 'DELIVERED';
       setActiveOrder(isStillActive ? data.activeOrder : null);
-      setIncomingRequest((current) => (
-        preserveIncomingRequest && current ? current : data.incomingRequest
-      ));
-      setAvailableOrdersCount((current) => (
-        preserveIncomingRequest && current > 0 ? current : data.availableOrdersCount
-      ));
+      setIncomingRequest(data.incomingRequest);
+      setAvailableOrdersCount(data.availableOrdersCount);
     } catch {
       // Token might be invalid or expired
       setPartner(null);
@@ -50,23 +46,14 @@ export default function App() {
 
   // Periodic polling for incoming delivery requests when partner is Online
   useEffect(() => {
-    if (!partner || !partner.isOnline) return;
+    if (!partner?.isOnline) return;
 
     const interval = setInterval(() => {
-      // Only check if we don't already have an incoming alert modal open
-      if (!incomingRequest) {
-        api.getDashboard().then((data) => {
-          setPartner(data.partner);
-          const isStillActive = data.activeOrder && data.activeOrder.status !== 'DELIVERED' && !data.activeOrder.paymentReceived;
-          setActiveOrder(isStillActive ? data.activeOrder : null);
-          setIncomingRequest(data.incomingRequest);
-          setAvailableOrdersCount(data.availableOrdersCount);
-        }).catch(() => {});
-      }
+      void refreshDashboard();
     }, 8000); // Reduced frequency since we now have Socket.IO push
 
     return () => clearInterval(interval);
-  }, [partner, incomingRequest]);
+  }, [partner?.isOnline, refreshDashboard]);
 
   // Socket.IO: Real-time delivery request push notifications
   useEffect(() => {
@@ -87,7 +74,7 @@ export default function App() {
           setIncomingRequest(data.order);
         }
       }
-      void refreshDashboard(true);
+      void refreshDashboard();
     });
 
     const unsubUpdates = subscribeToOrderUpdates((data: any) => {
@@ -105,7 +92,7 @@ export default function App() {
           setIncomingRequest(data.payload);
         }
       }
-      void refreshDashboard(true);
+      void refreshDashboard();
     });
 
     return () => {
@@ -147,6 +134,11 @@ export default function App() {
       setActiveOrder(res.order);
       setActiveTab('current_delivery');
     } catch (err: any) {
+      if (err.status === 409) {
+        setIncomingRequest(null);
+        void refreshDashboard();
+        return;
+      }
       alert(err.message || 'Failed to accept delivery');
       refreshDashboard();
     } finally {
@@ -155,7 +147,7 @@ export default function App() {
   };
 
   // Handler: Reject Incoming Delivery Request (Section 3)
-  const handleRejectDelivery = async (orderId: string, reason?: string) => {
+  const handleRejectDelivery = useCallback(async (orderId: string, reason?: string) => {
     try {
       await api.rejectDelivery(orderId, reason);
       setIncomingRequest(null);
@@ -164,7 +156,7 @@ export default function App() {
       console.error(err);
       setIncomingRequest(null);
     }
-  };
+  }, [refreshDashboard]);
 
   // Handler: Order Updated during fulfillment
   const handleOrderUpdated = (updatedOrder: Order) => {
@@ -175,30 +167,6 @@ export default function App() {
   const handleDeliveryCompleted = (completedOrder: Order, updatedPartner: PartnerProfile) => {
     setActiveOrder(null);
     setPartner(updatedPartner);
-  };
-
-  // Trigger manual simulation dispatch
-  const handleSimulateOrder = async () => {
-    try {
-      const res = await api.dispatchNewOrder();
-      if (res && res.order) {
-        setIncomingRequest(res.order);
-        setAvailableOrdersCount(1);
-        soundManager.playNewOrderAlert();
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to dispatch test order');
-    }
-  };
-
-  // Trigger demo reset
-  const handleResetDemo = async () => {
-    try {
-      await api.resetSimulator();
-      refreshDashboard();
-    } catch (err: any) {
-      alert(err.message || 'Failed to reset demo');
-    }
   };
 
   if (isLoadingAuth) {
@@ -223,11 +191,8 @@ export default function App() {
       <Navbar
         partner={partner}
         activeTab={activeTab}
-        activeOrder={activeOrder}
         onSelectTab={setActiveTab}
         onToggleOnline={handleToggleOnline}
-        onSimulateOrder={handleSimulateOrder}
-        onResetDemo={handleResetDemo}
       />
 
       {/* 2. Navigation Tabs (Desktop Header + Mobile Bottom) */}
@@ -247,7 +212,6 @@ export default function App() {
             availableOrdersCount={availableOrdersCount}
             onToggleOnline={handleToggleOnline}
             onNavigateToTab={setActiveTab}
-            onRefreshDashboard={refreshDashboard}
           />
         )}
 
