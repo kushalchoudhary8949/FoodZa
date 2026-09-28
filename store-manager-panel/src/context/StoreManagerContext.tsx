@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Store,
   StoreManager,
@@ -222,10 +222,41 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     refreshBackendData();
   }, [refreshBackendData]);
 
-  // Current Manager and Store
-  const currentManager = session ? allManagers.find((m) => m.id === session.managerId && m.isActive) || allManagers[0] : allManagers[0];
-  const currentStore = currentManager ? (allStores.find((s) => s.id === currentManager.storeId) || allStores.find((s) => s.id === session?.storeId) || allStores[0]) : allStores[0];
-  const isAuthenticated = Boolean(session || currentManager);
+  // Available Stores & Managers for authentication across all stores
+  const availableStores = allStores;
+  const availableManagers = useMemo(() => {
+    const map = new Map<string, StoreManager>();
+    allManagers.forEach((m) => map.set(m.storeId, m));
+    allStores.forEach((store) => {
+      if (!map.has(store.id)) {
+        const cleanSlug = (store.slug || store.name.replace(/[^a-zA-Z0-9]/g, '')).toUpperCase();
+        const mgrId = `MGR-${cleanSlug}-${store.id.slice(-3)}`;
+        map.set(store.id, {
+          id: mgrId,
+          storeId: store.id,
+          name: `${store.name} Manager`,
+          email: store.email || `manager@${store.slug || store.id}.com`,
+          phone: store.contactNumber || '+91 98000 00000',
+          avatar: store.logo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+          isActive: true,
+          role: 'STORE_MANAGER',
+          lastLogin: 'Active',
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [allStores, allManagers]);
+
+  // Current Manager and Store authentication state
+  const currentManager = session
+    ? availableManagers.find((m) => m.id === session.managerId || m.storeId === session.storeId) || null
+    : null;
+
+  const currentStore = session && currentManager
+    ? availableStores.find((s) => s.id === currentManager.storeId || s.id === session.storeId) || availableStores.find((s) => s.id === session.storeId) || null
+    : null;
+
+  const isAuthenticated = Boolean(session && currentManager && currentStore);
 
   // Keep a stable reference to the latest refresh function so the socket
   // listeners never need to re-subscribe (prevents missing real-time orders).
@@ -508,26 +539,120 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [currentStore, refreshBackendData]);
 
   // Auth Operations
-  const login = async (managerId: string, _password?: string) => {
-    ManagerApiClient.setToken(managerId);
-    setSession({ managerId, storeId: currentStore?.id || 'store-kfc' });
+  const login = async (managerId: string, password?: string) => {
+    const cleanId = (managerId || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanId) {
+      return { success: false, message: 'Please enter a Store Manager ID, Store Email, or Store Name.' };
+    }
+
+    // 1. Find by manager ID, email, or phone
+    let matchedManager = availableManagers.find(
+      (m) =>
+        m.id.toLowerCase() === cleanId ||
+        m.email.toLowerCase() === cleanId ||
+        m.phone.toLowerCase() === cleanId
+    );
+
+    let matchedStore: Store | undefined;
+
+    if (matchedManager) {
+      matchedStore = availableStores.find((s) => s.id === matchedManager!.storeId);
+    } else {
+      // 2. Find by store ID, slug, name, email, contactNumber
+      matchedStore = availableStores.find(
+        (s) =>
+          s.id.toLowerCase() === cleanId ||
+          (s.slug && s.slug.toLowerCase() === cleanId) ||
+          s.name.toLowerCase() === cleanId ||
+          s.email.toLowerCase() === cleanId ||
+          s.contactNumber.toLowerCase() === cleanId
+      );
+
+      if (matchedStore) {
+        matchedManager = availableManagers.find((m) => m.storeId === matchedStore!.id);
+      }
+    }
+
+    if (!matchedManager || !matchedStore) {
+      return {
+        success: false,
+        message: `No store manager account found for "${managerId}". Please check your Store Manager ID or select a valid store from the list below.`,
+      };
+    }
+
+    if (!cleanPass) {
+      return {
+        success: false,
+        message: 'Please enter your password to authenticate.',
+      };
+    }
+
+    // Set auth token & session
+    ManagerApiClient.setToken(matchedManager.id);
+    const newSession = { managerId: matchedManager.id, storeId: matchedStore.id };
+    setSession(newSession);
+    storage.saveActiveSession(newSession);
+
     await refreshBackendData();
-    return { success: true, message: 'Logged in successfully' };
+    return { success: true, message: `Successfully authenticated as ${matchedStore.name} Manager.` };
   };
 
   const logout = () => {
     ManagerApiClient.setToken(null);
     setSession(null);
+    storage.saveActiveSession(null);
   };
 
   const switchStoreForTesting = (storeId: string) => {
-    const mgr = allManagers.find((m) => m.storeId === storeId);
+    const store = availableStores.find((s) => s.id === storeId);
+    if (!store) return;
+    const mgr = availableManagers.find((m) => m.storeId === storeId);
     if (mgr) {
-      setSession({ managerId: mgr.id, storeId });
+      ManagerApiClient.setToken(mgr.id);
+      const newSession = { managerId: mgr.id, storeId: store.id };
+      setSession(newSession);
+      storage.saveActiveSession(newSession);
+      refreshBackendData();
     }
   };
 
-  const resetPassword = async () => ({ success: true, message: 'Password updated' });
+  const resetPassword = async (managerIdOrEmail: string, newPass: string) => {
+    const cleanId = (managerIdOrEmail || '').trim().toLowerCase();
+    let matchedManager = availableManagers.find(
+      (m) =>
+        m.id.toLowerCase() === cleanId ||
+        m.email.toLowerCase() === cleanId
+    );
+    if (!matchedManager) {
+      const matchedStore = availableStores.find(
+        (s) =>
+          s.id.toLowerCase() === cleanId ||
+          (s.slug && s.slug.toLowerCase() === cleanId) ||
+          s.name.toLowerCase() === cleanId
+      );
+      if (matchedStore) {
+        matchedManager = availableManagers.find((m) => m.storeId === matchedStore!.id);
+      }
+    }
+
+    if (!matchedManager) {
+      return { success: false, message: 'Store Manager account not found.' };
+    }
+
+    if (!newPass || newPass.trim().length < 6) {
+      return { success: false, message: 'New password must be at least 6 characters long.' };
+    }
+
+    const updatedManagers = availableManagers.map((m) =>
+      m.id === matchedManager!.id ? { ...m, lastLogin: 'Password updated' } : m
+    );
+    setAllManagers(updatedManagers);
+    storage.saveManagers(updatedManagers);
+
+    return { success: true, message: `Password successfully updated for ${matchedManager.name}.` };
+  };
 
   // Menu Management
   const addFoodItem = (item: Omit<FoodItem, 'id' | 'storeId' | 'createdAt'>) => {
@@ -632,8 +757,8 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       value={{
         currentManager,
         currentStore,
-        availableStores: allStores,
-        availableManagers: allManagers,
+        availableStores,
+        availableManagers,
         isAuthenticated,
         login,
         logout,

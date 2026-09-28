@@ -553,25 +553,24 @@ app.get('/api/partner/dashboard', (req, res) => {
     return res.status(401).json({ error: 'Unauthorized.' });
   }
 
-  let activeOrder: DBOrder | null = null;
+  const activeOrders: DBOrder[] = [];
   let incomingRequest: DBOrder | null = null;
   const availableOrders: DBOrder[] = [];
 
   for (const order of orders.values()) {
-    // Current active delivery (exclude completed/paid orders)
+    // Current active deliveries (exclude completed/paid orders)
     if (
       order.assignedPartnerId === partner.id &&
       ['DELIVERY_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'OTP_VERIFIED'].includes(order.status) &&
       !order.paymentReceived &&
       order.status !== 'DELIVERED'
     ) {
-      activeOrder = order;
+      activeOrders.push(order);
     }
 
-    // Pending incoming popup request (only if online and not busy with active delivery)
+    // Pending incoming popup request (if online)
     if (
       partner.isOnline &&
-      !activeOrder &&
       order.pendingAssignmentPartnerId === partner.id &&
       order.status === 'WAITING_FOR_PARTNER'
     ) {
@@ -584,9 +583,12 @@ app.get('/api/partner/dashboard', (req, res) => {
     }
   }
 
+  const activeOrder = activeOrders[0] || null;
+
   return res.json({
     partner: sanitizePartner(partner),
     activeOrder,
+    activeOrders,
     incomingRequest,
     availableOrdersCount: availableOrders.length,
     todayEarnings: partner.todayEarnings,

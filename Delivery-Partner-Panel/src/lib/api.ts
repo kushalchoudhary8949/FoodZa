@@ -214,6 +214,7 @@ class ApiClient {
   async getDashboard(): Promise<{
     partner: PartnerProfile;
     activeOrder: Order | null;
+    activeOrders: Order[];
     incomingRequest: Order | null;
     availableOrdersCount: number;
     todayEarnings: number;
@@ -224,6 +225,7 @@ class ApiClient {
     const profileRes = await this.getProfile();
     let incomingRequest = this.cachedIncomingRequest;
     let activeOrder = this.cachedActiveOrder;
+    let activeOrders: Order[] = [];
 
     try {
       const reqs: any[] = await this.request('/delivery-partners/my-requests');
@@ -237,9 +239,12 @@ class ApiClient {
     try {
       const deliveries: any[] = await this.request('/delivery-partners/my-deliveries');
       if (deliveries && deliveries.length > 0) {
-        const active = deliveries.find((d: any) => d.status !== 'DELIVERED' && d.status !== 'CANCELLED');
-        if (active) {
-          activeOrder = this.mapOrder(active);
+        const activeList = deliveries
+          .filter((d: any) => d.status !== 'DELIVERED' && d.status !== 'CANCELLED')
+          .map((d: any) => this.mapOrder(d));
+        if (activeList.length > 0) {
+          activeOrders = activeList;
+          activeOrder = activeList[0];
         }
       }
       this.cachedActiveOrder = activeOrder;
@@ -250,6 +255,7 @@ class ApiClient {
     return {
       partner: profileRes.partner,
       activeOrder,
+      activeOrders,
       incomingRequest,
       availableOrdersCount: incomingRequest ? 1 : 0,
       todayEarnings: profileRes.partner.todayEarnings,

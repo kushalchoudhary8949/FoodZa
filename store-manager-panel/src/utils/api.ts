@@ -3,7 +3,7 @@ const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:4
 const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 export class ManagerApiClient {
-  private static token: string | null = localStorage.getItem('fc_manager_token') || 'mgr_kfc_main';
+  private static token: string | null = localStorage.getItem('fc_manager_token') || null;
 
   static setToken(token: string | null) {
     this.token = token;

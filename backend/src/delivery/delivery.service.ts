@@ -418,11 +418,28 @@ export class DeliveryService {
         },
       });
 
-      // 2. Free up Partner & add earnings
+      // 2. Check if partner has any remaining active orders before clearing currentOrderId
+      const remainingOrders = await tx.order.findMany({
+        where: {
+          deliveryPartnerId: partnerId,
+          id: { not: orderId },
+          status: {
+            in: [
+              OrderStatus.DELIVERY_ASSIGNED,
+              OrderStatus.PICKED_UP,
+              OrderStatus.OUT_FOR_DELIVERY,
+            ],
+          },
+        },
+        select: { id: true },
+      });
+
+      const nextOrderId = remainingOrders[0]?.id || null;
+
       await tx.deliveryPartner.update({
         where: { id: partnerId },
         data: {
-          currentOrderId: null,
+          currentOrderId: nextOrderId,
           totalDeliveries: { increment: 1 },
           totalEarnings: { increment: deliveryEarning },
         },
@@ -469,7 +486,7 @@ export class DeliveryService {
       data: { onlineStatus: status },
     });
 
-    if (status === OnlineStatus.ONLINE && !partner.currentOrderId) {
+    if (status === OnlineStatus.ONLINE) {
       const readyOrders = await this.prisma.order.findMany({
         where: {
           status: { in: [OrderStatus.READY_FOR_PICKUP, OrderStatus.WAITING_FOR_PARTNER] },
@@ -485,8 +502,7 @@ export class DeliveryService {
         });
         if (pendingOffer?.deliveryPartner.onlineStatus === OnlineStatus.ONLINE) continue;
 
-        const assigned = await this.assignmentService.assignDelivery(readyOrder.id, partnerId);
-        if (assigned) break;
+        await this.assignmentService.assignDelivery(readyOrder.id, partnerId);
       }
     }
 

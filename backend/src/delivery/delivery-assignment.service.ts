@@ -38,22 +38,20 @@ export class DeliveryAssignmentService {
       if (
         candidate &&
         (!candidate.isActive ||
-          candidate.onlineStatus !== OnlineStatus.ONLINE ||
-          candidate.currentOrderId)
+          candidate.onlineStatus !== OnlineStatus.ONLINE)
       ) {
         candidate = null;
       }
     }
 
     if (!candidate) {
-      // 1. Find active, online delivery partners who don't have an active request/order
+      // 1. Find active, online delivery partners
       const eligiblePartners = await this.prisma.deliveryPartner.findMany({
         where: {
           isActive: true,
           onlineStatus: OnlineStatus.ONLINE,
-          currentOrderId: null,
         },
-        take: 5,
+        take: 10,
       });
 
       if (eligiblePartners.length === 0) {

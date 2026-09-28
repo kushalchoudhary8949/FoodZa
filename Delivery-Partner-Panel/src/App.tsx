@@ -18,6 +18,7 @@ export default function App() {
   const [partner, setPartner] = useState<PartnerProfile | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [incomingRequest, setIncomingRequest] = useState<Order | null>(null);
   const [availableOrdersCount, setAvailableOrdersCount] = useState<number>(0);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -28,8 +29,15 @@ export default function App() {
     try {
       const data = await api.getDashboard();
       setPartner(data.partner);
-      const isStillActive = data.activeOrder && data.activeOrder.status !== 'DELIVERED';
-      setActiveOrder(isStillActive ? data.activeOrder : null);
+      const activeList = (data.activeOrders || []).filter((o) => o.status !== 'DELIVERED');
+      setActiveOrders(activeList);
+      setActiveOrder((prev) => {
+        if (prev) {
+          const updatedPrev = activeList.find((o) => o.id === prev.id);
+          if (updatedPrev) return updatedPrev;
+        }
+        return activeList[0] || (data.activeOrder && data.activeOrder.status !== 'DELIVERED' ? data.activeOrder : null);
+      });
       setIncomingRequest(data.incomingRequest);
       setAvailableOrdersCount(data.availableOrdersCount);
     } catch (error) {
@@ -119,6 +127,10 @@ export default function App() {
       soundManager.playSuccessSound();
       setIncomingRequest(null);
       setActiveOrder(res.order);
+      setActiveOrders((prev) => {
+        const exists = prev.some((o) => o.id === res.order.id);
+        return exists ? prev.map((o) => (o.id === res.order.id ? res.order : o)) : [...prev, res.order];
+      });
       setActiveTab('current_delivery');
     } catch (err: any) {
       if (err.status === 409) {
@@ -148,11 +160,19 @@ export default function App() {
   // Handler: Order Updated during fulfillment
   const handleOrderUpdated = (updatedOrder: Order) => {
     setActiveOrder(updatedOrder);
+    setActiveOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
   };
 
   // Handler: Delivery Completed (Section 10)
   const handleDeliveryCompleted = (completedOrder: Order, updatedPartner: PartnerProfile) => {
-    setActiveOrder(null);
+    setActiveOrders((prev) => {
+      const remaining = prev.filter((o) => o.id !== completedOrder.id);
+      setActiveOrder(remaining[0] || null);
+      if (remaining.length === 0) {
+        setActiveTab('dashboard');
+      }
+      return remaining;
+    });
     setPartner(updatedPartner);
   };
 
@@ -215,8 +235,12 @@ export default function App() {
         {activeTab === 'deliveries' && (
           <DeliveriesView
             activeOrder={activeOrder}
+            activeOrders={activeOrders}
             partner={partner}
-            onSelectOrder={() => setActiveTab('current_delivery')}
+            onSelectOrder={(orderId) => {
+              const target = activeOrders.find((o) => o.id === orderId);
+              if (target) setActiveOrder(target);
+            }}
             onGoToCurrentDelivery={() => setActiveTab('current_delivery')}
           />
         )}
@@ -231,7 +255,7 @@ export default function App() {
       </main>
 
       {/* 4. Prominent New Order Dispatch Popup (Section 3) */}
-      {incomingRequest && partner.isOnline && !activeOrder && (
+      {incomingRequest && partner.isOnline && (
         <NewOrderAlertModal
           order={incomingRequest}
           onAccept={handleAcceptDelivery}
