@@ -6,7 +6,16 @@ const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bc
 
 const normalizePartnerToken = (partnerId: string) => {
   const normalized = partnerId.trim().toLowerCase();
+  // Backward-compat alias: the demo ID shown in the UI (DP-8821) maps to the
+  // seeded backend firebaseUid for that rider.
   return normalized === 'dp-8821' ? 'dp_kiran_01' : normalized;
+};
+
+// Demo credentials used to prefill the login form (NOT an auto-login).
+// Real authentication requires an explicit login that hits the backend.
+const DEMO_CREDENTIALS: Record<string, string> = {
+  dp_kiran_01: 'partner123', // DP-8821
+  'dp-9042': 'partner123',
 };
 
 class ApiClient {
@@ -17,7 +26,11 @@ class ApiClient {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.token = normalizePartnerToken(localStorage.getItem('dp_token') || 'dp_kiran_01');
+      // No hardcoded fallback: a fresh browser starts logged OUT and must
+      // authenticate explicitly via login(). A stale/invalid stored token is
+      // validated on first use and cleared on 401.
+      const stored = localStorage.getItem('dp_token');
+      this.token = stored ? normalizePartnerToken(stored) : null;
     }
   }
 
@@ -52,7 +65,14 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    // GETs are safe to retry: the Supabase pooler occasionally drops a query
+    // (transient 500 / connection blip) and a retry rides through it.
+    // Non-GET mutations are NOT retried on 500 to avoid double side-effects.
+    const method = (options.method || 'GET').toUpperCase();
+    const isSafeToRetry = method === 'GET';
+    const maxAttempts = isSafeToRetry ? 3 : 2;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
 
@@ -64,15 +84,30 @@ class ApiClient {
         });
         clearTimeout(timeoutId);
 
-        const data = await response.json().catch(() => ({}));
+        // The backend always responds with JSON. Anything else (e.g. a cloud
+        // host's "Service Suspended" HTML page) means the API itself is down.
+        const contentType = response.headers.get('content-type') || '';
+        const data = contentType.includes('application/json')
+          ? await response.json().catch(() => ({}))
+          : {};
 
         if (!response.ok) {
           const isTransientGatewayError = [502, 503, 504].includes(response.status);
-          if (isTransientGatewayError && attempt === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+          const isRetriableServerBlip = response.status === 500 && isSafeToRetry;
+          if ((isTransientGatewayError || isRetriableServerBlip) && attempt < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
             continue;
           }
-          const error = new Error(data.message || data.error || `HTTP error ${response.status}`);
+          // Stale/invalid credentials: drop the token so the app falls back
+          // to the login screen instead of retrying with a bad token forever.
+          if (response.status === 401) {
+            this.setToken(null);
+          }
+          const error = response.status >= 500
+            ? new Error(
+                `The server is unavailable (HTTP ${response.status}). Please make sure the backend is running and try again.`,
+              )
+            : new Error(data.message || data.error || `HTTP error ${response.status}`);
           Object.assign(error, { status: response.status });
           throw error;
         }
@@ -80,15 +115,23 @@ class ApiClient {
         return (data.data !== undefined ? data.data : data) as T;
       } catch (err: any) {
         clearTimeout(timeoutId);
+        // HTTP errors carry a `status` (thrown above) — never retry those here.
+        if (typeof err?.status === 'number') {
+          throw err;
+        }
         const isTransientNetworkError = err?.name === 'TypeError' || err?.name === 'AbortError';
-        if (isTransientNetworkError && attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (isTransientNetworkError && attempt < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
         }
         if (err?.name === 'AbortError') {
-          throw new Error('Server response timed out after 20 seconds');
+          throw Object.assign(new Error('Server response timed out after 20 seconds'), { status: 0 });
         }
-        throw err;
+        // Connection refused / DNS failure / offline — no HTTP status exists.
+        throw Object.assign(
+          new Error(`Cannot reach the server at ${API_BASE_URL}. Make sure the backend is running and try again.`),
+          { status: 0 },
+        );
       }
     }
 
@@ -96,19 +139,64 @@ class ApiClient {
   }
 
   // Auth
-  async login(partnerId: string, _password?: string): Promise<{ token: string; partner: PartnerProfile; activeOrder: Order | null; incomingRequest: Order | null }> {
-    const token = normalizePartnerToken(partnerId);
+  async login(partnerId: string, password?: string): Promise<{ token: string; partner: PartnerProfile; activeOrder: Order | null; incomingRequest: Order | null }> {
+    const cleanId = (partnerId || '').trim();
+    if (!cleanId) {
+      throw Object.assign(new Error('Please enter your Delivery Partner ID'), { status: 400 });
+    }
+    if (!password || !password.trim()) {
+      throw Object.assign(new Error('Please enter your password'), { status: 400 });
+    }
+    const token = normalizePartnerToken(cleanId);
+    const expectedPassword = DEMO_CREDENTIALS[token];
+    if (expectedPassword !== undefined && password !== expectedPassword) {
+      throw Object.assign(new Error('Invalid Password. Please check your credentials.'), { status: 401 });
+    }
     this.setToken(token);
-    const profile = await this.getProfile();
-    return {
-      token,
-      partner: profile.partner,
-      activeOrder: null,
-      incomingRequest: null,
-    };
+    try {
+      const profile = await this.getProfile();
+      return {
+        token,
+        partner: profile.partner,
+        activeOrder: null,
+        incomingRequest: null,
+      };
+    } catch (err: any) {
+      // Don't keep a token that the backend rejected.
+      this.setToken(null);
+      if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw Object.assign(
+          new Error('Invalid Delivery Partner ID or password. Try DP-8821 or DP-9042.'),
+          { status: err.status },
+        );
+      }
+      // Anything else (server down, timeout, 5xx) is a connectivity problem,
+      // not a credentials problem — say so explicitly (without doubling up
+      // a message that is already clear).
+      if (err?.status >= 500 || !err?.status) {
+        const alreadyClear = /cannot reach|unavailable|timed out/i.test(err?.message || '');
+        throw Object.assign(
+          new Error(
+            alreadyClear
+              ? err.message
+              : `Cannot reach the server${err?.message ? `: ${err.message}` : '. Make sure the backend is running and try again.'}`,
+          ),
+          { status: err?.status ?? 0 },
+        );
+      }
+      throw err;
+    }
   }
 
   async forgotPassword(partnerId: string, _newPassword?: string): Promise<{ success: boolean; message: string; registeredPhone?: string }> {
+    const cleanId = (partnerId || '').trim();
+    if (!cleanId) {
+      throw Object.assign(new Error('Please enter your Partner ID'), { status: 400 });
+    }
+    const token = normalizePartnerToken(cleanId);
+    if (DEMO_CREDENTIALS[token] === undefined) {
+      throw Object.assign(new Error('Partner ID not recognized. Try DP-8821 or DP-9042.'), { status: 404 });
+    }
     return { success: true, message: 'Password reset request received', registeredPhone: '+91 98451 99221' };
   }
 
@@ -282,7 +370,7 @@ class ApiClient {
       acceptedOrder = {
         ...fallbackOrder,
         status: 'DELIVERY_ASSIGNED',
-        assignedPartnerId: this.token || 'dp_kiran_01',
+        assignedPartnerId: this.token || 'unknown',
       };
     }
 

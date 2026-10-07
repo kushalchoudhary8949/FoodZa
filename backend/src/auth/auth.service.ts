@@ -2,11 +2,12 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto } from './dto/auth.dto';
+import { RegisterDto, SupabaseSyncDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -15,11 +16,30 @@ export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
 
   async register(dto: RegisterDto) {
+    if (!dto.supabaseUid && !dto.firebaseUid) {
+      throw new BadRequestException('Either supabaseUid or firebaseUid must be provided');
+    }
+
     // Check if user already exists
-    const existing = await this.prisma.user.findUnique({
-      where: { firebaseUid: dto.firebaseUid },
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(dto.supabaseUid ? [{ supabaseUid: dto.supabaseUid }] : []),
+          ...(dto.firebaseUid ? [{ firebaseUid: dto.firebaseUid }] : []),
+          ...(dto.email ? [{ email: dto.email }] : []),
+        ],
+      },
     });
+
     if (existing) {
+      // If user exists by email and now provides supabaseUid, link it
+      if (dto.supabaseUid && !existing.supabaseUid) {
+        const updated = await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { supabaseUid: dto.supabaseUid },
+        });
+        return this.getUserProfile(updated.id);
+      }
       throw new ConflictException('User already registered');
     }
 
@@ -27,6 +47,7 @@ export class AuthService {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
+          supabaseUid: dto.supabaseUid,
           firebaseUid: dto.firebaseUid,
           name: dto.name,
           phone: dto.phone,
@@ -63,15 +84,62 @@ export class AuthService {
           break;
       }
 
-      this.logger.log(`User registered: ${user.id} (${user.role})`);
+      this.logger.log(`User registered: ${user.id} (${user.role}) [supabase: ${user.supabaseUid ?? 'none'}, firebase: ${user.firebaseUid ?? 'none'}]`);
 
-      return this.getUserProfile(user.firebaseUid);
+      return this.getUserProfile(user.id);
     });
   }
 
-  async getUserProfile(firebaseUid: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { firebaseUid },
+  async syncSupabaseUser(dto: SupabaseSyncDto) {
+    let user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { supabaseUid: dto.supabaseUid },
+          ...(dto.email ? [{ email: dto.email }] : []),
+        ],
+      },
+    });
+
+    const targetRole = dto.role ?? UserRole.CUSTOMER;
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          supabaseUid: dto.supabaseUid,
+          name: dto.name,
+          email: dto.email,
+          phone: dto.phone,
+          role: targetRole,
+          customer: targetRole === UserRole.CUSTOMER ? {
+            create: {
+              name: dto.name,
+              phone: dto.phone,
+            },
+          } : undefined,
+        },
+      });
+      this.logger.log(`Auto-synced new Supabase user: ${user.id} (${user.email})`);
+    } else if (!user.supabaseUid) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { supabaseUid: dto.supabaseUid },
+      });
+      this.logger.log(`Linked existing user ${user.id} to Supabase UID ${dto.supabaseUid}`);
+    }
+
+    return this.getUserProfile(user.id);
+  }
+
+  async getUserProfile(idOrUid: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: idOrUid },
+          { supabaseUid: idOrUid },
+          { firebaseUid: idOrUid },
+          { email: idOrUid },
+        ],
+      },
       include: {
         customer: true,
         manager: { include: { restaurant: { select: { id: true, name: true, slug: true } } } },

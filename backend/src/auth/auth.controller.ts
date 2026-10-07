@@ -1,7 +1,6 @@
-import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/auth.dto';
-import { FirebaseAuthGuard } from './guards/firebase-auth.guard';
+import { RegisterDto, SupabaseSyncDto } from './dto/auth.dto';
 import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 
@@ -20,22 +19,30 @@ export class AuthController {
   }
 
   /**
+   * POST /api/auth/supabase/sync
+   * Sync a Supabase Auth user profile to the local database.
+   */
+  @Public()
+  @Post('supabase/sync')
+  async syncSupabase(@Body() dto: SupabaseSyncDto) {
+    return this.authService.syncSupabaseUser(dto);
+  }
+
+  /**
    * GET /api/auth/profile
    * Get the authenticated user's profile.
    */
-  @UseGuards(FirebaseAuthGuard)
   @Get('profile')
   async getProfile(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.getUserProfile(user.firebaseUid);
+    return this.authService.getUserProfile(user.id);
   }
 
   /**
    * POST /api/auth/verify
    * Verify the current token and return user data.
    */
-  @UseGuards(FirebaseAuthGuard)
   @Post('verify')
   async verify(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.getUserProfile(user.firebaseUid);
+    return this.authService.getUserProfile(user.id);
   }
 }

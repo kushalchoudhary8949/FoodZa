@@ -173,6 +173,33 @@ export class FirebaseAuthGuard implements CanActivate {
       }
     }
 
+    // If user exists as DELIVERY_PARTNER but has no DeliveryPartner record
+    // attached, create it now — otherwise deliveryPartnerId stays undefined
+    // and every delivery endpoint fails.
+    if (user && user.role === UserRole.DELIVERY_PARTNER && !user.deliveryPartner) {
+      const dp = await this.prisma.deliveryPartner.create({
+        data: {
+          userId: user.id,
+          phone: user.phone ?? '+91 98000 00000',
+        },
+        select: { id: true },
+      });
+      user.deliveryPartner = dp;
+    }
+
+    // Same safety net for CUSTOMER users missing their Customer record.
+    if (user && user.role === UserRole.CUSTOMER && !user.customer) {
+      const cust = await this.prisma.customer.create({
+        data: {
+          userId: user.id,
+          name: user.name ?? user.firebaseUid,
+          phone: user.phone ?? '+91 98000 00000',
+        },
+        select: { id: true },
+      });
+      user.customer = cust;
+    }
+
     if (!user) {
       throw new UnauthorizedException('User not found in database');
     }

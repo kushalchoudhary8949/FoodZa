@@ -26,6 +26,16 @@ export default function App() {
 
   // Initial Auth Check & Dashboard Fetch
   const refreshDashboard = useCallback(async () => {
+    // No stored credentials → stay on the login screen, don't hit the API.
+    if (!api.getToken()) {
+      setPartner(null);
+      setActiveOrders([]);
+      setActiveOrder(null);
+      setIncomingRequest(null);
+      setAvailableOrdersCount(0);
+      setIsLoadingAuth(false);
+      return;
+    }
     try {
       const data = await api.getDashboard();
       setPartner(data.partner);
@@ -40,8 +50,18 @@ export default function App() {
       });
       setIncomingRequest(data.incomingRequest);
       setAvailableOrdersCount(data.availableOrdersCount);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to refresh delivery partner dashboard:', error);
+      // Backend rejected the stored token (or the profile is gone) →
+      // drop the session so the login screen is shown.
+      if (error?.status === 401 || error?.status === 403 || error?.status === 404) {
+        api.setToken(null);
+        setPartner(null);
+        setActiveOrders([]);
+        setActiveOrder(null);
+        setIncomingRequest(null);
+        setAvailableOrdersCount(0);
+      }
     } finally {
       setIsLoadingAuth(false);
     }
@@ -188,7 +208,10 @@ export default function App() {
   }
 
   // If not authenticated, render Login Page (Section 1)
-  if (!partner) {
+  // Both a loaded profile AND a stored token are required — a profile alone
+  // (e.g. stale state) must never grant access.
+  const isAuthenticated = Boolean(partner && api.getToken());
+  if (!isAuthenticated) {
     return <LoginModal onLoginSuccess={handleLoginSuccess} />;
   }
 

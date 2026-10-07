@@ -19,7 +19,8 @@ export const CurrentUser = createParamDecorator(
  */
 export interface AuthenticatedUser {
   id: string;
-  firebaseUid: string;
+  supabaseUid?: string;
+  firebaseUid?: string;
   name: string;
   email: string | null;
   phone: string | null;
