@@ -1,7 +1,16 @@
 import { io, Socket } from 'socket.io-client';
 
-const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const rawSocketUrl = import.meta.env.VITE_SOCKET_URL || (isLocal ? 'http://localhost:4000' : 'https://foodza-bckend.onrender.com');
+const isLocal = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname.startsWith('192.168.') ||
+  window.location.hostname.startsWith('172.') ||
+  window.location.hostname.startsWith('10.') ||
+  window.location.hostname.endsWith('.local') ||
+  import.meta.env.DEV
+);
+const localHost = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+const rawSocketUrl = import.meta.env.VITE_SOCKET_URL || (isLocal ? `http://${localHost}:4000` : 'https://foodza-bckend.onrender.com');
 const SOCKET_URL = rawSocketUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 let socket: Socket | null = null;
