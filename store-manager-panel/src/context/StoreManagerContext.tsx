@@ -213,6 +213,43 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
           setIncomingOrderTimeRemaining((prevTime) => prevTime || 60);
         }
       }
+
+      // 3. Menu items and categories
+      try {
+        const menuRes: any = await ManagerApiClient.getStoreMenu(storeIdToFetch);
+        if (Array.isArray(menuRes)) {
+          const fetchedCategories = menuRes.map((c: any) => ({
+            id: c.id,
+            storeId: c.restaurantId,
+            name: c.name,
+            description: c.description || '',
+          }));
+          
+          let fetchedItems: FoodItem[] = [];
+          menuRes.forEach((c: any) => {
+            if (Array.isArray(c.menuItems)) {
+              fetchedItems.push(...c.menuItems.map((i: any) => ({
+                id: i.id,
+                storeId: i.restaurantId,
+                name: i.name,
+                description: i.description || '',
+                price: Number(i.price),
+                image: i.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop',
+                category: c.name,
+                isVeg: i.foodType === 'VEG',
+                isAvailable: i.isAvailable,
+                createdAt: i.createdAt,
+              })));
+            }
+          });
+          
+          setAllCategories(fetchedCategories);
+          setAllFoodItems(fetchedItems);
+        }
+      } catch (menuErr: any) {
+        console.warn('Backend menu sync failed:', menuErr.message);
+      }
+
     } catch (err: any) {
       console.warn('Backend sync failed, using local storage cache:', err.message);
     }
@@ -665,35 +702,35 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       imageUrl: item.image,
       price: item.price,
       foodType: item.isVeg ? 'VEG' : 'NON_VEG',
-    }).then(() => refreshBackendData()).catch(() => {});
+    }).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to add item'); });
   };
 
   const updateFoodItem = (itemId: string, updates: Partial<FoodItem>) => {
-    ManagerApiClient.updateMenuItem(itemId, updates).then(() => refreshBackendData()).catch(() => {});
+    ManagerApiClient.updateMenuItem(itemId, updates).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to update item'); });
   };
 
   const deleteFoodItem = (itemId: string) => {
-    ManagerApiClient.deleteMenuItem(itemId).then(() => refreshBackendData()).catch(() => {});
+    ManagerApiClient.deleteMenuItem(itemId).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to delete item'); });
   };
 
   const toggleItemAvailability = (itemId: string) => {
     const target = allFoodItems.find((i) => i.id === itemId);
     if (target) {
-      ManagerApiClient.toggleItemAvailability(itemId, !target.isAvailable).then(() => refreshBackendData()).catch(() => {});
+      ManagerApiClient.toggleItemAvailability(itemId, !target.isAvailable).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to toggle availability'); });
     }
   };
 
   const addCategory = (name: string, description?: string) => {
     if (!currentStore) return;
-    ManagerApiClient.addCategory(currentStore.id, name, description).then(() => refreshBackendData()).catch(() => {});
+    ManagerApiClient.addCategory(currentStore.id, name, description).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to add category'); });
   };
 
   const updateCategory = (categoryId: string, name: string, description?: string) => {
-    ManagerApiClient.updateCategory(categoryId, name, description).then(() => refreshBackendData()).catch(() => {});
+    ManagerApiClient.updateCategory(categoryId, name, description).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to update category'); });
   };
 
   const deleteCategory = (categoryId: string) => {
-    ManagerApiClient.deleteCategory(categoryId).then(() => refreshBackendData()).catch(() => {});
+    ManagerApiClient.deleteCategory(categoryId).then(() => refreshBackendData()).catch((err: any) => { alert(err.message || 'Failed to delete category'); });
   };
 
   // Issue Box
