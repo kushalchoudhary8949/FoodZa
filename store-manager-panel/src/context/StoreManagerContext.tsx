@@ -569,7 +569,24 @@ export const StoreManagerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const updateStoreDetails = useCallback((updatedFields: Partial<Store>) => {
     if (!currentStore) return;
-    ManagerApiClient.updateStore(currentStore.id, updatedFields).then(() => refreshBackendData()).catch(() => {});
+    
+    const backendPayload: any = {
+      name: updatedFields.name,
+      description: updatedFields.description,
+      imageUrl: updatedFields.logo,
+      phone: updatedFields.contactNumber,
+      address: updatedFields.address,
+      openingTime: updatedFields.openingTime,
+      closingTime: updatedFields.closingTime,
+      isOpen: updatedFields.isOpen,
+    };
+    
+    Object.keys(backendPayload).forEach(key => backendPayload[key] === undefined && delete backendPayload[key]);
+
+    ManagerApiClient.updateStore(currentStore.id, backendPayload)
+      .then(() => refreshBackendData())
+      .catch((err: any) => { alert(err.message || 'Failed to update store details'); });
+      
     setAllStores((prev) =>
       prev.map((s) => (s.id === currentStore.id ? { ...s, ...updatedFields } : s))
     );
