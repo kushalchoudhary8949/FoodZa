@@ -44,6 +44,9 @@ export class AuthService {
     }
 
     // Create user + role-specific profile in a transaction
+    // NOTE: We return the full user from *inside* the transaction using `tx`
+    // instead of calling getUserProfile (which uses this.prisma on a separate
+    // pgBouncer connection and can't see uncommitted writes).
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -86,7 +89,17 @@ export class AuthService {
 
       this.logger.log(`User registered: ${user.id} (${user.role}) [supabase: ${user.supabaseUid ?? 'none'}, firebase: ${user.firebaseUid ?? 'none'}]`);
 
-      return this.getUserProfile(user.id);
+      // Fetch the complete user with relations using the transaction client
+      const fullUser = await tx.user.findUniqueOrThrow({
+        where: { id: user.id },
+        include: {
+          customer: true,
+          manager: { include: { restaurant: { select: { id: true, name: true, slug: true } } } },
+          deliveryPartner: true,
+        },
+      });
+
+      return fullUser;
     });
   }
 
@@ -127,7 +140,26 @@ export class AuthService {
       this.logger.log(`Linked existing user ${user.id} to Supabase UID ${dto.supabaseUid}`);
     }
 
-    return this.getUserProfile(user.id);
+    // Fetch with relations inline (avoids pgBouncer cross-connection issues)
+    const fullUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: user.id },
+          { supabaseUid: user.supabaseUid ?? undefined },
+        ],
+      },
+      include: {
+        customer: true,
+        manager: { include: { restaurant: { select: { id: true, name: true, slug: true } } } },
+        deliveryPartner: true,
+      },
+    });
+
+    if (!fullUser) {
+      throw new NotFoundException('User not found after sync');
+    }
+
+    return fullUser;
   }
 
   async getUserProfile(idOrUid: string) {
