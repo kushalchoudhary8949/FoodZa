@@ -1,7 +1,26 @@
 import { StoreManager, AccountStatus } from '../../types';
 import { db } from '../storage';
+import { AdminApiClient } from '../adminApi';
 
 const delay = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Map a backend Manager row (with user + restaurant) into the admin-panel shape */
+function mapBackendToManager(m: any): StoreManager {
+  const isActive = m.isActive !== false && m.user?.isActive !== false;
+  return {
+    id: m.id,
+    name: m.user?.name || 'Store Manager',
+    phoneNumber: m.user?.phone || '',
+    phone: m.user?.phone || '',
+    email: m.user?.email || '',
+    loginId: `MGR-${String(m.id).slice(-6).toUpperCase()}`,
+    assignedStoreId: m.restaurantId,
+    assignedStoreName: m.restaurant?.name,
+    status: isActive ? 'Active' : 'Inactive',
+    joinedDate: m.createdAt ? new Date(m.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    totalOrdersManaged: 0,
+  };
+}
 
 export interface CreateManagerDto {
   name: string;
@@ -20,6 +39,17 @@ export interface UpdateManagerDto extends Partial<CreateManagerDto> {
 
 export const managerService = {
   async getManagers(): Promise<StoreManager[]> {
+    try {
+      const data = await AdminApiClient.getManagers();
+      if (data && Array.isArray(data) && data.length > 0) {
+        const backendManagers = data.map(mapBackendToManager);
+        // Sync localStorage so dropdowns/assignments use real backend IDs
+        db.setManagers(backendManagers);
+        return backendManagers;
+      }
+    } catch (err) {
+      console.warn('Backend manager fetch failed, falling back to local:', err);
+    }
     await delay();
     return db.getManagers();
   },

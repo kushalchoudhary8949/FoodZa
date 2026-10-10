@@ -555,7 +555,10 @@ export class OrdersService {
     });
   }
 
-  async findAllAdmin(query: { status?: OrderStatus; storeId?: string; customerId?: string }) {
+  async findAllAdmin(query: { status?: OrderStatus; storeId?: string; customerId?: string; take?: number }) {
+    // Bounded query: unbounded findMany gets slower as order volume grows
+    // and can exceed frontend timeouts (Render cold start + large payload).
+    const take = Math.min(Math.max(query.take ?? 200, 1), 500);
     return this.prisma.order.findMany({
       where: {
         status: query.status,
@@ -563,12 +566,15 @@ export class OrdersService {
         customerId: query.customerId,
       },
       include: {
+        orderItems: true,
+        orderEvents: { orderBy: { createdAt: 'asc' } },
         restaurant: { select: { name: true } },
         customer: { select: { name: true, phone: true } },
         deliveryPartner: { select: { user: { select: { name: true } } } },
         payment: true,
       },
       orderBy: { createdAt: 'desc' },
+      take,
     });
   }
 

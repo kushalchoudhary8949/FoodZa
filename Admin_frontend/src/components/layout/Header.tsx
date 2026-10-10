@@ -46,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, onOpenMobileNav, onS
         return 'Push Notifications';
       case 'offers':
         return 'Offers, Coupons & Sales';
+      case 'banners':
+        return 'Banners & Ads Management';
       case 'sales':
         return 'Sales & Revenue Analytics';
       case 'settings':

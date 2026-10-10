@@ -31,6 +31,7 @@ export type NavTab =
   | 'partners'
   | 'notifications'
   | 'offers'
+  | 'banners'
   | 'sales'
   | 'settings';
 
@@ -105,6 +106,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'offers',
       label: 'Offers & Promos',
+      icon: <Tag className="w-5 h-5" />,
+    },
+    {
+      id: 'banners',
+      label: 'Banners & Ads',
       icon: <Tag className="w-5 h-5" />,
     },
     {

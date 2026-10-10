@@ -116,9 +116,15 @@ export class SupabaseAuthGuard implements CanActivate {
     let tokenRole: UserRole | null = null;
 
     // 1. Try Supabase verification if client is configured
+    // Bounded with a timeout so a slow/paused Supabase project can't hang
+    // the entire request (which surfaces on the client as a fetch timeout).
     if (this.supabaseClient) {
       try {
-        const { data, error } = await this.supabaseClient.auth.getUser(token);
+        const getUserPromise = this.supabaseClient.auth.getUser(token);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Supabase getUser timed out after 5s')), 5000),
+        );
+        const { data, error } = await Promise.race([getUserPromise, timeoutPromise]);
         if (!error && data?.user) {
           supabaseUid = data.user.id;
           tokenEmail = data.user.email ?? null;

@@ -18,6 +18,7 @@ import { NotificationPage } from './features/notifications/NotificationPage';
 import { OffersPage } from './features/offers/OffersPage';
 import { SalesDashboardPage } from './features/sales/SalesDashboardPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { BannerManagementPage } from './features/banners/BannerManagementPage';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -71,6 +72,8 @@ const AppContent: React.FC = () => {
         return <NotificationPage />;
       case 'offers':
         return <OffersPage />;
+      case 'banners':
+        return <BannerManagementPage />;
       case 'sales':
         return <SalesDashboardPage />;
       case 'settings':

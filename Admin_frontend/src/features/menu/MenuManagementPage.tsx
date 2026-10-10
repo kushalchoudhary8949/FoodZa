@@ -120,7 +120,8 @@ export const MenuManagementPage: React.FC<{ initialStoreId?: string }> = ({ init
 
   const handleToggleStock = async (item: MenuItem) => {
     try {
-      const updated = await menuService.toggleAvailability(item.id);
+      const nextAvailable = !item.isAvailable;
+      const updated = await menuService.toggleAvailability(item.id, nextAvailable);
       success(
         updated.isAvailable ? 'Item Available' : 'Item Out of Stock',
         `${item.name} is now ${updated.isAvailable ? 'in stock' : 'out of stock'}.`

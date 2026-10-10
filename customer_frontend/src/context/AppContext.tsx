@@ -44,6 +44,9 @@ interface AppContextType {
   vegOnlyFilter: boolean;
   setVegOnlyFilter: (vegOnly: boolean) => void;
 
+  // Banners
+  banners: any[];
+
   // Cart
   cart: CartState;
   cartStore: Store | null;
@@ -121,6 +124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCuisine, setSelectedCuisine] = useState<string>('All');
   const [vegOnlyFilter, setVegOnlyFilter] = useState<boolean>(false);
+  const [banners, setBanners] = useState<any[]>([]);
 
   // Cart state
   const [cart, setCart] = useState<CartState>(() => {
@@ -157,7 +161,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     ApiClient.getStores()
       .then((data) => {
-        if (data && Array.isArray(data) && data.length > 0) {
+        if (data && Array.isArray(data)) {
           const mapped: Store[] = data.map((s: any) => ({
             id: s.id,
             name: s.name,
@@ -179,6 +183,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
       .catch((err) => {
         console.warn('Backend stores fetch failed, fallback to local stores:', err.message);
+      });
+
+    ApiClient.getBanners()
+      .then((data) => {
+        if (data && Array.isArray(data)) {
+          setBanners(data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Backend banners fetch failed:', err.message);
       });
   }, []);
 
@@ -680,6 +694,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSelectedCuisine,
         vegOnlyFilter,
         setVegOnlyFilter,
+
+        banners,
 
         cart,
         cartStore,

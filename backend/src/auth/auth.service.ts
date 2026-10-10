@@ -13,7 +13,7 @@ import { RegisterDto, SupabaseSyncDto } from './dto/auth.dto';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async register(dto: RegisterDto) {
     if (!dto.supabaseUid && !dto.firebaseUid) {

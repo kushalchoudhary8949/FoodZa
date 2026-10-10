@@ -714,3 +714,19 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+// ──────────────────────────────────────────────────────────
+// BANNER (Ads / Posters)
+// ──────────────────────────────────────────────────────────
+
+model Banner {
+  id        String   @id @default(cuid())
+  title     String
+  imageUrl  String   @map("image_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("banners")
+}

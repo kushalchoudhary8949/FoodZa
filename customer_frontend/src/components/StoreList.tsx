@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { Store } from '../types';
-import { Search, Star, Clock, MapPin, Sparkles, Filter, Leaf, ArrowRight, ShieldCheck } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Search, Star, Clock, MapPin, Sparkles, Filter, Leaf, ArrowRight, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const CUISINES = ['All', 'Burgers', 'Italian', 'Biryani', 'Healthy', 'Street Food'];
 
@@ -18,7 +18,49 @@ export const StoreList: React.FC = () => {
     setVegOnlyFilter,
     user,
     openAuthModal,
+    banners,
   } = useApp();
+
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const [bannerDirection, setBannerDirection] = useState(1);
+
+  // Reset to first banner whenever the banner list changes (e.g. fresh fetch, admin edits)
+  useEffect(() => {
+    setCurrentBannerIndex(0);
+  }, [banners?.length]);
+
+  // Auto-scroll banners every 5s. Paused when there is 0-1 banner.
+  useEffect(() => {
+    if (!banners || banners.length <= 1) return;
+    const interval = setInterval(() => {
+      setBannerDirection(1);
+      setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [banners?.length]);
+
+  const goToBanner = useCallback(
+    (index: number) => {
+      if (!banners || banners.length === 0) return;
+      setBannerDirection(index > currentBannerIndex ? 1 : -1);
+      setCurrentBannerIndex(((index % banners.length) + banners.length) % banners.length);
+    },
+    [banners, currentBannerIndex]
+  );
+
+  const goToPrevBanner = useCallback(() => {
+    if (!banners || banners.length === 0) return;
+    setBannerDirection(-1);
+    setCurrentBannerIndex((prev) => (prev - 1 + banners.length) % banners.length);
+  }, [banners]);
+
+  const goToNextBanner = useCallback(() => {
+    if (!banners || banners.length === 0) return;
+    setBannerDirection(1);
+    setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+  }, [banners]);
+
+  const activeBanner = banners && banners.length > 0 ? banners[currentBannerIndex] : null;
 
   // Filter stores based on search, cuisine, and veg-only
   const filteredStores = stores.filter((store) => {
@@ -38,23 +80,48 @@ export const StoreList: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Student Welcome & Search Hero Banner */}
-      <section className="bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-xs text-xs font-bold mb-3">
+      {/* Dynamic Banner Section */}
+      <section className="relative overflow-hidden rounded-3xl shadow-lg bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 min-h-[280px]">
+        {activeBanner ? (
+          <AnimatePresence mode="wait" custom={bannerDirection}>
+            <motion.div
+              key={activeBanner.id ?? currentBannerIndex}
+              custom={bannerDirection}
+              initial={{ opacity: 0, x: 60 * bannerDirection }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -60 * bannerDirection }}
+              transition={{ duration: 0.45, ease: 'easeOut' }}
+              className="absolute inset-0 w-full h-full"
+            >
+              <img
+                src={activeBanner.imageUrl}
+                alt={activeBanner.title}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Fall back to gradient background if the banner image is broken
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <div className="absolute inset-0 bg-black/40" />
+            </motion.div>
+          </AnimatePresence>
+        ) : null}
+
+        <div className="relative z-10 max-w-2xl p-6 sm:p-8 text-white h-full flex flex-col justify-center">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-xs text-xs font-bold mb-3 w-fit">
             <Sparkles className="w-3.5 h-3.5 text-amber-200" />
             <span>Hostel & PG Express Food Delivery</span>
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight font-['Outfit',sans-serif] leading-tight">
-            {user ? `What are you craving, ${user.name.split(' ')[0]}?` : 'Hungry in your hostel room?'}
+            {activeBanner?.title || (user ? `What are you craving, ${user.name.split(' ')[0]}?` : 'Hungry in your hostel room?')}
           </h1>
           <p className="text-amber-100 text-sm sm:text-base mt-2 font-medium max-w-lg">
             Pick a store below to browse its menu. Fast 20-30 min delivery straight to your campus gate or room.
           </p>
 
           {/* Quick Search Bar */}
-          <div className="mt-5 relative">
+          <div className="mt-5 relative w-full">
             <Search className="w-5 h-5 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -76,6 +143,38 @@ export const StoreList: React.FC = () => {
 
         {/* Decorative background shapes */}
         <div className="absolute right-[-20px] bottom-[-20px] w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+
+        {/* Carousel controls — only when 2+ banners */}
+        {banners && banners.length > 1 && (
+          <>
+            <button
+              onClick={goToPrevBanner}
+              aria-label="Previous banner"
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-xs transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={goToNextBanner}
+              aria-label="Next banner"
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-xs transition-colors"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
+              {banners.map((banner, index) => (
+                <button
+                  key={banner.id ?? index}
+                  onClick={() => goToBanner(index)}
+                  aria-label={`Go to banner ${index + 1}`}
+                  className={`h-2 rounded-full transition-all ${
+                    index === currentBannerIndex ? 'w-6 bg-white' : 'w-2 bg-white/50 hover:bg-white/80'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Filter and Quick Tabs Bar */}

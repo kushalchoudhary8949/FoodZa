@@ -27,7 +27,7 @@ export class AdminApiClient {
     return this.token;
   }
 
-  static async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  static async request<T>(endpoint: string, options: RequestInit = {}, retries = 2): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -37,32 +37,53 @@ export class AdminApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    // Render free-tier cold starts can take 30-50s. Other panels use 20s;
+    // admin was 6s which guaranteed fallback to local DB on every cold start.
+    const REQUEST_TIMEOUT_MS = 25000;
+    let lastError: any = null;
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      const json = await response.json().catch(() => ({}));
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          ...options,
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorMsg = json.message || json.error || `HTTP ${response.status}`;
-        throw new Error(errorMsg);
+        const json = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const errorMsg = json.message || json.error || `HTTP ${response.status}`;
+          throw new Error(errorMsg);
+        }
+
+        return (json.data !== undefined ? json.data : json) as T;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        const isAbort = err.name === 'AbortError';
+        const isTransient =
+          isAbort || err?.name === 'TypeError' || err.message?.includes('Failed to fetch');
+        // Only retry safe idempotent reads (GET) on transient failures.
+        const isGet = !options.method || options.method.toUpperCase() === 'GET';
+        if (isTransient && isGet && attempt < retries) {
+          // Backoff: 1s, 2s — gives Render cold start time to wake up.
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        if (isAbort) {
+          throw new Error(
+            `Server response timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds (attempt ${attempt + 1}/${retries + 1}) — ${options.method || 'GET'} ${endpoint}. Backend may be cold-starting on Render.`
+          );
+        }
+        throw err;
       }
-
-      return (json.data !== undefined ? json.data : json) as T;
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        throw new Error('Server response timed out after 6 seconds');
-      }
-      throw err;
     }
+    throw lastError;
   }
 
   // ── Dashboard Metrics ──
@@ -113,6 +134,54 @@ export class AdminApiClient {
     return this.request(`/store-managers/${id}/assign-store`, {
       method: 'POST',
       body: JSON.stringify({ restaurantId }),
+    });
+  }
+
+  // ── Menu ──
+  static async getStoreMenu(storeId: string) {
+    return this.request<any[]>(`/stores/${storeId}/menu`);
+  }
+
+  static async createMenuCategory(storeId: string, data: any) {
+    return this.request(`/stores/${storeId}/menu/categories`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async updateMenuCategory(categoryId: string, data: any) {
+    return this.request(`/menu/categories/${categoryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async deleteMenuCategory(categoryId: string) {
+    return this.request(`/menu/categories/${categoryId}`, { method: 'DELETE' });
+  }
+
+  static async createMenuItem(storeId: string, data: any) {
+    return this.request(`/stores/${storeId}/menu/items`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async updateMenuItem(itemId: string, data: any) {
+    return this.request(`/menu/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async deleteMenuItem(itemId: string) {
+    return this.request(`/menu/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  static async toggleMenuItemAvailability(itemId: string, isAvailable: boolean) {
+    return this.request(`/menu/items/${itemId}/availability`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isAvailable }),
     });
   }
 

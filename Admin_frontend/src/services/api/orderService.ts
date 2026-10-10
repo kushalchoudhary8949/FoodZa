@@ -21,7 +21,9 @@ export const orderService = {
         storeId: params?.storeId && params.storeId !== 'ALL' ? params.storeId : undefined,
       });
 
-      if (Array.isArray(backendOrders) && backendOrders.length > 0) {
+      if (Array.isArray(backendOrders)) {
+        // Backend is source of truth — return even when empty so an empty
+        // live queue doesn't silently show stale mock orders.
         return backendOrders.map((o: any) => ({
           id: o.id,
           orderNumber: o.orderNumber || o.id,

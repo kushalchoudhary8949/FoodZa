@@ -50,8 +50,15 @@ export class OrdersController {
     @Query('status') status?: OrderStatus,
     @Query('storeId') storeId?: string,
     @Query('customerId') customerId?: string,
+    @Query('take') take?: string,
   ) {
-    return this.ordersService.findAllAdmin({ status, storeId, customerId });
+    const parsedTake = take ? parseInt(take, 10) : undefined;
+    return this.ordersService.findAllAdmin({
+      status,
+      storeId,
+      customerId,
+      take: Number.isFinite(parsedTake) ? parsedTake : undefined,
+    });
   }
 
   @Get(':id')

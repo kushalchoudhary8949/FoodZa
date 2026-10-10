@@ -78,7 +78,7 @@ export class MenuController {
   }
 
   @Patch('menu/items/:id/availability')
-  @Roles(UserRole.MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateAvailability(
     @Param('id') id: string,
     @Body() dto: UpdateAvailabilityDto,

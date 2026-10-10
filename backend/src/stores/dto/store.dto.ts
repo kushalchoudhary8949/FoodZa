@@ -11,6 +11,8 @@ export class CreateStoreDto {
   @IsOptional() @IsNumber() longitude?: number;
   @IsOptional() @IsString() openingTime?: string;
   @IsOptional() @IsString() closingTime?: string;
+  @IsOptional() @IsBoolean() isOpen?: boolean;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
 export class UpdateStoreDto {
@@ -24,4 +26,5 @@ export class UpdateStoreDto {
   @IsOptional() @IsString() openingTime?: string;
   @IsOptional() @IsString() closingTime?: string;
   @IsOptional() @IsBoolean() isOpen?: boolean;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }

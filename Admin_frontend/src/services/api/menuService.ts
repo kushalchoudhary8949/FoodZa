@@ -1,7 +1,5 @@
 import { MenuItem, MenuCategory } from '../../types';
-import { db } from '../storage';
-
-const delay = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
+import { AdminApiClient } from '../adminApi';
 
 export interface CreateMenuItemDto {
   storeId: string;
@@ -30,31 +28,46 @@ export interface UpdateCategoryDto extends Partial<CreateCategoryDto> {
   id: string;
 }
 
+function mapBackendCategory(cat: any): MenuCategory {
+  return {
+    id: cat.id,
+    storeId: cat.restaurantId,
+    name: cat.name,
+    description: cat.description || '',
+    displayOrder: cat.displayOrder ?? 0,
+  };
+}
+
+function mapBackendItem(item: any, categoryName?: string): MenuItem {
+  return {
+    id: item.id,
+    storeId: item.restaurantId,
+    name: item.name,
+    description: item.description || '',
+    image: item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80',
+    price: item.price,
+    categoryId: item.categoryId,
+    categoryName: categoryName || 'General',
+    isVeg: item.foodType === 'VEG',
+    isAvailable: item.isAvailable ?? true,
+    preparationTimeMinutes: item.preparationTimeMinutes || 10,
+  };
+}
+
 export const menuService = {
   // Categories
   async getCategoriesByStore(storeId: string): Promise<MenuCategory[]> {
-    await delay();
-    const categories = db.getCategories();
-    return categories
-      .filter((c) => c.storeId === storeId)
-      .sort((a, b) => a.displayOrder - b.displayOrder);
+    const rawCategories = await AdminApiClient.getStoreMenu(storeId);
+    return rawCategories.map(mapBackendCategory).sort((a, b) => a.displayOrder - b.displayOrder);
   },
 
   async addCategory(data: CreateCategoryDto): Promise<MenuCategory> {
-    await delay();
-    const categories = db.getCategories();
-    const storeCategories = categories.filter((c) => c.storeId === data.storeId);
-
-    const newCategory: MenuCategory = {
-      id: `cat_${data.storeId}_${Date.now()}`,
-      storeId: data.storeId,
-      name: data.name.trim(),
-      displayOrder: data.displayOrder ?? storeCategories.length + 1,
-    };
-
-    const updated = [...categories, newCategory];
-    db.setCategories(updated);
-    return newCategory;
+    const res = await AdminApiClient.createMenuCategory(data.storeId, {
+      name: data.name,
+      description: data.description,
+      displayOrder: data.displayOrder,
+    });
+    return mapBackendCategory(res);
   },
 
   async createCategory(data: CreateCategoryDto): Promise<MenuCategory> {
@@ -65,97 +78,64 @@ export const menuService = {
     idOrData: string | UpdateCategoryDto,
     maybeNameOrData?: string | { name: string; description?: string; displayOrder?: number }
   ): Promise<MenuCategory> {
-    await delay();
-    const categories = db.getCategories();
-
     let id: string;
-    let name: string | undefined;
-    let description: string | undefined;
-    let displayOrder: number | undefined;
+    const payload: any = {};
 
     if (typeof idOrData === 'object') {
       id = idOrData.id;
-      name = idOrData.name;
-      description = idOrData.description;
-      displayOrder = idOrData.displayOrder;
+      if (idOrData.name !== undefined) payload.name = idOrData.name;
+      if (idOrData.description !== undefined) payload.description = idOrData.description;
+      if (idOrData.displayOrder !== undefined) payload.displayOrder = idOrData.displayOrder;
     } else {
       id = idOrData;
       if (typeof maybeNameOrData === 'string') {
-        name = maybeNameOrData;
+        payload.name = maybeNameOrData;
       } else if (maybeNameOrData) {
-        name = maybeNameOrData.name;
-        description = maybeNameOrData.description;
-        displayOrder = maybeNameOrData.displayOrder;
+        if (maybeNameOrData.name !== undefined) payload.name = maybeNameOrData.name;
+        if (maybeNameOrData.description !== undefined) payload.description = maybeNameOrData.description;
+        if (maybeNameOrData.displayOrder !== undefined) payload.displayOrder = maybeNameOrData.displayOrder;
       }
     }
 
-    const target = categories.find((c) => c.id === id);
-    if (!target) throw new Error('Category not found');
-
-    const updatedCat: MenuCategory = {
-      ...target,
-      name: name !== undefined ? name.trim() : target.name,
-      description: description !== undefined ? description.trim() : target.description,
-      displayOrder: displayOrder !== undefined ? displayOrder : target.displayOrder,
-    };
-
-    const updated = categories.map((c) => (c.id === id ? updatedCat : c));
-    db.setCategories(updated);
-    return updatedCat;
+    const res = await AdminApiClient.updateMenuCategory(id, payload);
+    return mapBackendCategory(res);
   },
 
   async deleteCategory(id: string): Promise<void> {
-    await delay();
-    const categories = db.getCategories();
-    const filtered = categories.filter((c) => c.id !== id);
-    db.setCategories(filtered);
-
-    // Also remove items belonging to this category or reassign
-    const items = db.getMenuItems();
-    const filteredItems = items.filter((item) => item.categoryId !== id);
-    db.setMenuItems(filteredItems);
+    await AdminApiClient.deleteMenuCategory(id);
   },
 
   // Menu Items
   async getMenuItemsByStore(storeId: string): Promise<MenuItem[]> {
-    await delay();
-    const items = db.getMenuItems();
-    const categories = db.getCategories();
-
-    return items
-      .filter((item) => item.storeId === storeId)
-      .map((item) => {
-        const cat = categories.find((c) => c.id === item.categoryId);
-        return {
-          ...item,
-          categoryName: cat?.name || 'General',
-        };
-      });
+    const rawCategories = await AdminApiClient.getStoreMenu(storeId);
+    const items: MenuItem[] = [];
+    for (const cat of rawCategories) {
+      if (cat.menuItems) {
+        for (const item of cat.menuItems) {
+          items.push(mapBackendItem(item, cat.name));
+        }
+      }
+    }
+    return items;
   },
 
   async addMenuItem(data: CreateMenuItemDto): Promise<MenuItem> {
-    await delay();
-    const items = db.getMenuItems();
-    const categories = db.getCategories();
-    const category = categories.find((c) => c.id === data.categoryId);
-
-    const newItem: MenuItem = {
-      id: `item_${data.storeId}_${Date.now()}`,
-      storeId: data.storeId,
-      name: data.name.trim(),
-      description: data.description.trim(),
-      image: data.image?.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80',
-      price: Number(data.price),
+    const res = await AdminApiClient.createMenuItem(data.storeId, {
       categoryId: data.categoryId,
-      categoryName: category?.name || 'General',
-      isVeg: Boolean(data.isVeg),
-      isAvailable: data.isAvailable ?? true,
-      preparationTimeMinutes: data.preparationTimeMinutes || 10,
-    };
-
-    const updated = [newItem, ...items];
-    db.setMenuItems(updated);
-    return newItem;
+      name: data.name,
+      description: data.description,
+      imageUrl: data.image,
+      price: Number(data.price),
+      foodType: data.isVeg ? 'VEG' : 'NON_VEG',
+      // The backend doesn't expect isAvailable on create, it defaults to true
+      // But we can check if it supports it, actually backend DTO doesn't have it on create.
+    });
+    // Toggle availability immediately if created as false
+    if (data.isAvailable === false) {
+      await AdminApiClient.toggleMenuItemAvailability(res.id, false);
+      res.isAvailable = false;
+    }
+    return mapBackendItem(res);
   },
 
   async createMenuItem(data: CreateMenuItemDto): Promise<MenuItem> {
@@ -163,45 +143,25 @@ export const menuService = {
   },
 
   async updateMenuItem(data: UpdateMenuItemDto): Promise<MenuItem> {
-    await delay();
-    const items = db.getMenuItems();
-    const categories = db.getCategories();
-    const existing = items.find((i) => i.id === data.id);
-    if (!existing) throw new Error('Menu item not found');
+    const payload: any = {};
+    if (data.categoryId !== undefined) payload.categoryId = data.categoryId;
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.description !== undefined) payload.description = data.description;
+    if (data.image !== undefined) payload.imageUrl = data.image;
+    if (data.price !== undefined) payload.price = Number(data.price);
+    if (data.isVeg !== undefined) payload.foodType = data.isVeg ? 'VEG' : 'NON_VEG';
+    if (data.isAvailable !== undefined) payload.isAvailable = data.isAvailable;
 
-    const category = data.categoryId
-      ? categories.find((c) => c.id === data.categoryId)
-      : categories.find((c) => c.id === existing.categoryId);
-
-    const updatedItem: MenuItem = {
-      ...existing,
-      ...data,
-      price: data.price !== undefined ? Number(data.price) : existing.price,
-      categoryName: category?.name || existing.categoryName,
-    };
-
-    const updated = items.map((i) => (i.id === data.id ? updatedItem : i));
-    db.setMenuItems(updated);
-    return updatedItem;
+    const res = await AdminApiClient.updateMenuItem(data.id, payload);
+    return mapBackendItem(res);
   },
 
   async deleteMenuItem(id: string): Promise<void> {
-    await delay();
-    const items = db.getMenuItems();
-    const filtered = items.filter((i) => i.id !== id);
-    db.setMenuItems(filtered);
+    await AdminApiClient.deleteMenuItem(id);
   },
 
-  async toggleAvailability(id: string): Promise<MenuItem> {
-    await delay();
-    const items = db.getMenuItems();
-    const target = items.find((i) => i.id === id);
-    if (!target) throw new Error('Menu item not found');
-
-    const nextAvailable = !target.isAvailable;
-    const updatedItem = { ...target, isAvailable: nextAvailable };
-    const updated = items.map((i) => (i.id === id ? updatedItem : i));
-    db.setMenuItems(updated);
-    return updatedItem;
+  async toggleAvailability(id: string, isAvailable: boolean): Promise<MenuItem> {
+    const res = await AdminApiClient.toggleMenuItemAvailability(id, isAvailable);
+    return mapBackendItem(res);
   },
 };

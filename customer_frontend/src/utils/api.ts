@@ -128,4 +128,9 @@ export class ApiClient {
   static async getOrderById(id: string) {
     return this.request(`/orders/${id}`);
   }
+
+  // ── Banners ──
+  static async getBanners() {
+    return this.request<any[]>('/banners/active');
+  }
 }

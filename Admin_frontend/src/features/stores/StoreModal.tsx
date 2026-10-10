@@ -3,7 +3,7 @@ import { Modal } from '../../components/common/Modal';
 import { Button } from '../../components/common/Button';
 import { Store, StoreManager, StoreStatus } from '../../types';
 import { storeService } from '../../services/api/storeService';
-import { db } from '../../services/storage';
+import { managerService } from '../../services/api/managerService';
 import { useToast } from '../../context/ToastContext';
 import { Store as StoreIcon, Clock, Phone, MapPin, Image, UserCheck } from 'lucide-react';
 
@@ -34,8 +34,18 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   const [managers, setManagers] = useState<StoreManager[]>([]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    // Load real backend managers so assignment uses IDs the backend recognises.
+    // Falls back to local cache inside managerService when offline.
+    managerService.getManagers().then((list) => {
+      if (!cancelled) setManagers(list);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen) {
-      setManagers(db.getManagers());
       if (storeToEdit) {
         setName(storeToEdit.name);
         setLogo(storeToEdit.logo || '');

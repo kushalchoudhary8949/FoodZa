@@ -21,6 +21,7 @@ import { OffersModule } from './offers/offers.module';
 import { SalesModule } from './sales/sales.module';
 import { IssuesModule } from './issues/issues.module';
 import { AdminsModule } from './admins/admins.module';
+import { BannerModule } from './banner/banner.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { AdminsModule } from './admins/admins.module';
     SalesModule,
     IssuesModule,
     AdminsModule,
+    BannerModule,
   ],
   controllers: [AppController],
   providers: [
