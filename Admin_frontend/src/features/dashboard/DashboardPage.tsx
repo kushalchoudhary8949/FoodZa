@@ -18,6 +18,7 @@ import { OrderStatusBadge, VegNonVegBadge } from '../../components/common/Badge'
 import { Button } from '../../components/common/Button';
 import { NavTab } from '../../components/layout/Sidebar';
 import { useIntervention } from '../../context/InterventionContext';
+import { db } from '../../services/storage';
 import {
   ShoppingBag,
   IndianRupee,
@@ -37,33 +38,41 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 export const DashboardPage: React.FC<{ onNavigate: (tab: NavTab) => void }> = ({ onNavigate }) => {
   const { openInterventionModal } = useIntervention();
   const [summary, setSummary] = useState<SalesSummary | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [partners, setPartners] = useState<DeliveryPartner[]>([]);
-  const [managers, setManagers] = useState<StoreManager[]>([]);
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [stores, setStores] = useState<Store[]>(() => db.getStores());
+  const [partners, setPartners] = useState<DeliveryPartner[]>(() => db.getPartners());
+  const [managers, setManagers] = useState<StoreManager[]>(() => db.getManagers());
+  const [recentOrders, setRecentOrders] = useState<Order[]>(() => db.getOrders().slice(0, 5));
   const [trendData, setTrendData] = useState<SalesTrendPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadData = async () => {
-    setIsLoading(true);
+    const dashboardDataPromise = Promise.all([
+      storeService.getStores(),
+      partnerService.getPartners(),
+      managerService.getManagers(),
+      orderService.getOrders({ take: 5 }),
+      salesService.getSalesTrends('Today'),
+    ])
+      .then(([st, pt, mg, ord, tr]) => {
+        setStores(st);
+        setPartners(pt);
+        setManagers(mg);
+        setRecentOrders(ord);
+        setTrendData(tr);
+      })
+      .catch((error) => {
+        console.error('Failed to refresh dashboard data', error);
+      });
+
     try {
-      const [sum, st, pt, mg, ord, tr] = await Promise.all([
-        salesService.getSummary(),
-        storeService.getStores(),
-        partnerService.getPartners(),
-        managerService.getManagers(),
-        orderService.getOrders(),
-        salesService.getSalesTrends('Today'),
-      ]);
-      setSummary(sum);
-      setStores(st);
-      setPartners(pt);
-      setManagers(mg);
-      setRecentOrders(ord.slice(0, 5));
-      setTrendData(tr);
+      setSummary(await salesService.getSummary());
+    } catch (error) {
+      console.error('Failed to load dashboard summary', error);
     } finally {
       setIsLoading(false);
     }
+
+    await dashboardDataPromise;
   };
 
   useEffect(() => {

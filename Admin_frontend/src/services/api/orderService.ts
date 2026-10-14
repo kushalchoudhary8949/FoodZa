@@ -11,6 +11,7 @@ export interface OrderFilterParams {
   dateFilter?: 'ALL' | 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'CUSTOM';
   startDate?: string;
   endDate?: string;
+  take?: number;
 }
 
 export const orderService = {
@@ -19,6 +20,7 @@ export const orderService = {
       const backendOrders: any[] = await AdminApiClient.getAllOrders({
         status: params?.status && params.status !== 'ALL' ? params.status : undefined,
         storeId: params?.storeId && params.storeId !== 'ALL' ? params.storeId : undefined,
+        take: params?.take,
       });
 
       if (Array.isArray(backendOrders)) {

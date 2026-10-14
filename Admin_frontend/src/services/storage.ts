@@ -51,12 +51,16 @@ class MockDatabase {
   private setItem<T>(key: string, value: T): void {
     try {
       const json = JSON.stringify(value);
+      const previous =
+        typeof window !== 'undefined' ? localStorage.getItem(key) : this.memoryStore[key];
+      const hasChanged = previous !== json;
       if (typeof window !== 'undefined') {
-        localStorage.setItem(key, json);
+        if (hasChanged) {
+          localStorage.setItem(key, json);
+        }
       }
       this.memoryStore[key] = json;
-      // Dispatch custom event for reactive UI updates
-      if (typeof window !== 'undefined') {
+      if (hasChanged && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('foodfleet_db_change', { detail: { key } }));
       }
     } catch (e) {
