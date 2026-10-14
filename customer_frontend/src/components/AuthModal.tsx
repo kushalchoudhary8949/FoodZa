@@ -1,7 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { X, Smartphone, User, MapPin, Building2, DoorClosed, ArrowRight, Sparkles, ShieldCheck } from 'lucide-react';
+import {
+  X,
+  Smartphone,
+  User,
+  MapPin,
+  Building2,
+  DoorClosed,
+  ArrowRight,
+  Sparkles,
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  RotateCcw,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  setupRecaptcha,
+  sendOtp,
+  formatPhoneNumber,
+  type ConfirmationResult,
+} from '../lib/firebase';
 
 const HOSTEL_PRESETS = [
   'Boys Hostel B (Aryabhatta)',
@@ -16,28 +35,110 @@ export const AuthModal: React.FC = () => {
   const [authMode, setAuthMode] = useState<'otp' | 'signup'>('otp');
 
   // Form states
-  const [phone, setPhone] = useState<string>('+91 98765 43210');
-  const [otpCode, setOtpCode] = useState<string>('4082');
+  const [phone, setPhone] = useState<string>('');
+  const [otpCode, setOtpCode] = useState<string>('');
   const [isOtpSent, setIsOtpSent] = useState<boolean>(false);
+
+  // Firebase OTP states
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState<boolean>(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number>(0);
 
   // Signup states
   const [name, setName] = useState<string>('');
-  const [signupPhone, setSignupPhone] = useState<string>('+91 ');
+  const [signupPhone, setSignupPhone] = useState<string>('');
   const [address, setAddress] = useState<string>('');
   const [hostelOrPg, setHostelOrPg] = useState<string>('');
   const [roomNumber, setRoomNumber] = useState<string>('');
 
+  // Countdown timer for Resend OTP
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
   if (!isAuthOpen) return null;
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (phone.length < 10) return;
-    setIsOtpSent(true);
+    setErrorMessage(null);
+
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsSendingOtp(true);
+    try {
+      // 1. Initialize invisible reCAPTCHA verifier
+      const verifier = setupRecaptcha('recaptcha-container', 'invisible');
+
+      // 2. Format phone to standard E.164 (+91...) and trigger Firebase SMS
+      const formatted = formatPhoneNumber(phone);
+      const confirmation = await sendOtp(formatted, verifier);
+
+      setConfirmationResult(confirmation);
+      setIsOtpSent(true);
+      setCountdown(60);
+      setErrorMessage(null);
+    } catch (err: any) {
+      console.error('Firebase sendOtp error:', err);
+      if (err.code === 'auth/invalid-phone-number') {
+        setErrorMessage('Invalid phone number format. Please check the digits entered.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setErrorMessage('Too many SMS requests. Please wait a short while before trying again.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setErrorMessage(
+          'Firebase Phone Authentication / SMS Region is not enabled. In Firebase Console: enable Phone provider and enable SMS for India (+91) under Authentication > Settings > SMS region policy.'
+        );
+      } else {
+        setErrorMessage(err.message || 'Unable to send SMS verification code. Please check console.');
+      }
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
-  const handleOtpLogin = (e: React.FormEvent) => {
+  const handleOtpLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(phone, otpCode);
+    setErrorMessage(null);
+
+    if (!otpCode || otpCode.trim().length < 6) {
+      setErrorMessage('Please enter the 6-digit verification code received via SMS.');
+      return;
+    }
+
+    if (!confirmationResult) {
+      setErrorMessage('No active verification session. Please request OTP again.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      // Confirm SMS code with Firebase
+      const credential = await confirmationResult.confirm(otpCode.trim());
+      const firebaseUser = credential.user;
+      const idToken = await firebaseUser.getIdToken();
+
+      login(firebaseUser.phoneNumber || phone, otpCode, firebaseUser.uid, idToken);
+    } catch (err: any) {
+      console.error('Firebase confirm error:', err);
+      if (err.code === 'auth/invalid-verification-code') {
+        setErrorMessage('Invalid verification code. Please double-check the OTP sent to your phone.');
+      } else if (err.code === 'auth/code-expired') {
+        setErrorMessage('The verification code has expired. Please tap Resend OTP.');
+      } else {
+        setErrorMessage(err.message || 'Failed to verify code. Please try again.');
+      }
+    } finally {
+      setIsVerifyingOtp(false);
+    }
   };
 
   const handleSignup = (e: React.FormEvent) => {
@@ -52,10 +153,6 @@ export const AuthModal: React.FC = () => {
     });
   };
 
-  const handleQuickDemoLogin = () => {
-    login('+91 98765 43210', '4082');
-  };
-
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
@@ -65,6 +162,9 @@ export const AuthModal: React.FC = () => {
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-100 relative my-8"
         >
+          {/* Invisible reCAPTCHA container for Firebase Phone Auth */}
+          <div id="recaptcha-container"></div>
+
           {/* Close button */}
           <button
             onClick={closeAuthModal}
@@ -95,6 +195,7 @@ export const AuthModal: React.FC = () => {
               onClick={() => {
                 setAuthMode('otp');
                 setIsOtpSent(false);
+                setErrorMessage(null);
               }}
               className={`flex-1 py-2 rounded-lg transition-all ${
                 authMode === 'otp' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'
@@ -103,7 +204,10 @@ export const AuthModal: React.FC = () => {
               Phone OTP Login
             </button>
             <button
-              onClick={() => setAuthMode('signup')}
+              onClick={() => {
+                setAuthMode('signup');
+                setErrorMessage(null);
+              }}
               className={`flex-1 py-2 rounded-lg transition-all ${
                 authMode === 'signup' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'
               }`}
@@ -112,6 +216,14 @@ export const AuthModal: React.FC = () => {
             </button>
           </div>
 
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed font-medium">{errorMessage}</div>
+            </div>
+          )}
+
           {/* Mode: OTP */}
           {authMode === 'otp' && (
             <div>
@@ -119,7 +231,7 @@ export const AuthModal: React.FC = () => {
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-stone-600 mb-1.5">
-                      Phone Number
+                      Mobile Number
                     </label>
                     <div className="relative">
                       <Smartphone className="w-5 h-5 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -127,20 +239,31 @@ export const AuthModal: React.FC = () => {
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+91 98765 43210"
+                        placeholder="e.g. 9876543210 or +91 98765 43210"
                         required
+                        autoFocus
                         className="w-full pl-11 pr-4 py-3 rounded-xl border border-stone-200 text-stone-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                       />
                     </div>
-                    <p className="text-xs text-stone-400 mt-1">We will send a 4-digit verification code</p>
+                    <p className="text-xs text-stone-400 mt-1">We will send a 6-digit SMS verification code</p>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={isSendingOtp}
+                    className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                   >
-                    <span>Get OTP</span>
-                    <ArrowRight className="w-4 h-4" />
+                    {isSendingOtp ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Sending SMS OTP...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Get Firebase OTP</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
                   </button>
                 </form>
               ) : (
@@ -148,11 +271,14 @@ export const AuthModal: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-bold uppercase tracking-wider text-stone-600">
-                        Enter 4-digit OTP
+                        Enter 6-Digit OTP
                       </label>
                       <button
                         type="button"
-                        onClick={() => setIsOtpSent(false)}
+                        onClick={() => {
+                          setIsOtpSent(false);
+                          setErrorMessage(null);
+                        }}
                         className="text-xs font-semibold text-amber-600 hover:underline cursor-pointer"
                       >
                         Change Number
@@ -165,20 +291,45 @@ export const AuthModal: React.FC = () => {
                         maxLength={6}
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value)}
-                        placeholder="4082"
+                        placeholder="e.g. 123456"
                         required
+                        autoFocus
                         className="w-full pl-11 pr-4 py-3 rounded-xl border border-stone-200 text-stone-900 text-sm font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                       />
                     </div>
-                    <p className="text-xs text-emerald-600 mt-1 font-medium">Auto-filled verification code: 4082</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-stone-500">SMS code sent to {phone}</p>
+                      {countdown > 0 ? (
+                        <span className="text-xs text-stone-400">Resend in {countdown}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          className="text-xs font-semibold text-amber-600 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Resend OTP</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={isVerifyingOtp}
+                    className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md transition-all text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                   >
-                    <span>Verify & Continue</span>
-                    <ArrowRight className="w-4 h-4" />
+                    {isVerifyingOtp ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Verifying Code...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Verify & Sign In</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
                   </button>
                 </form>
               )}
@@ -299,18 +450,6 @@ export const AuthModal: React.FC = () => {
               </button>
             </form>
           )}
-
-          {/* Quick Demo Student Login shortcut */}
-          <div className="mt-6 pt-4 border-t border-stone-100 text-center">
-            <button
-              onClick={handleQuickDemoLogin}
-              type="button"
-              className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs transition-colors border border-amber-200/70 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>1-Click Student Demo Login (Aarav Sharma)</span>
-            </button>
-          </div>
         </motion.div>
       </div>
     </AnimatePresence>

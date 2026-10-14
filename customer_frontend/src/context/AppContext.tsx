@@ -27,8 +27,8 @@ interface AppContextType {
   isAuthOpen: boolean;
   openAuthModal: (redirectAction?: () => void) => void;
   closeAuthModal: () => void;
-  login: (phone: string, otpCode?: string) => boolean;
-  signup: (data: { name: string; phone: string; address: string; hostelOrPg?: string; roomNumber?: string }) => void;
+  login: (phone: string, otpCode?: string, firebaseUid?: string, idToken?: string) => boolean;
+  signup: (data: { name: string; phone: string; address: string; hostelOrPg?: string; roomNumber?: string }, firebaseUid?: string, idToken?: string) => void;
   updateProfile: (data: Partial<UserProfile>) => void;
   logout: () => void;
 
@@ -357,10 +357,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPendingAuthAction(null);
   };
 
-  const login = (phone: string, _otpCode?: string): boolean => {
+  const login = (phone: string, _otpCode?: string, customFirebaseUid?: string, idToken?: string): boolean => {
     const cleanPhone = phone.replace(/\D/g, '');
-    const firebaseUid = cleanPhone.includes('9876543210') ? 'usr_student_101' : `dev_customer_${cleanPhone}`;
-    ApiClient.setToken(firebaseUid);
+    const firebaseUid = customFirebaseUid || (cleanPhone.includes('9876543210') ? 'usr_student_101' : `dev_customer_${cleanPhone}`);
+    ApiClient.setToken(idToken || firebaseUid);
 
     // Synchronously set user state so UI updates IMMEDIATELY
     const initialUser: UserProfile = {
@@ -403,10 +403,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const signup = (data: { name: string; phone: string; address: string; hostelOrPg?: string; roomNumber?: string }) => {
+  const signup = (
+    data: { name: string; phone: string; address: string; hostelOrPg?: string; roomNumber?: string },
+    customFirebaseUid?: string,
+    idToken?: string
+  ) => {
     const cleanPhone = data.phone.replace(/\D/g, '');
-    const firebaseUid = `dev_customer_${cleanPhone}`;
-    ApiClient.setToken(firebaseUid);
+    const firebaseUid = customFirebaseUid || `dev_customer_${cleanPhone}`;
+    ApiClient.setToken(idToken || firebaseUid);
 
     // Synchronously set user state so UI updates IMMEDIATELY
     const newUser: UserProfile = {
