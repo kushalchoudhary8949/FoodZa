@@ -61,7 +61,7 @@ export const LoginPage: React.FC = () => {
             <Flame className="w-8 h-8 fill-white text-white" />
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            FoodFleet Admin
+            FoodZa Admin
           </h2>
           <p className="mt-1 text-xs sm:text-sm text-slate-400 font-medium">
             Centralized Management & Operations Portal

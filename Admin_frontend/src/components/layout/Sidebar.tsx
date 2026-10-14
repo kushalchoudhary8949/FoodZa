@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && (
               <div className="flex flex-col">
                 <span className="font-extrabold text-base text-white tracking-tight flex items-center gap-1.5">
-                  FoodFleet
+                  FoodZa
                   <span className="text-[10px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.2 rounded border border-amber-500/30">
                     ADMIN
                   </span>
