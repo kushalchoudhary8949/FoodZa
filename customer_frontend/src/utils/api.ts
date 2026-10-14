@@ -12,7 +12,7 @@ const rawApiUrl = import.meta.env.VITE_API_URL || (isLocal ? `http://${localHost
 const API_BASE_URL = rawApiUrl.replace('foodza-backend.onrender.com', 'foodza-bckend.onrender.com');
 
 export class ApiClient {
-  private static token: string | null = localStorage.getItem('fc_customer_token') || 'usr_student_102';
+  private static token: string | null = localStorage.getItem('fc_customer_token') || null;
 
   static setToken(token: string | null) {
     this.token = token;

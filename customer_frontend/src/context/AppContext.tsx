@@ -359,32 +359,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = (phone: string, _otpCode?: string, customFirebaseUid?: string, idToken?: string): boolean => {
     const cleanPhone = phone.replace(/\D/g, '');
-    const firebaseUid = customFirebaseUid || (cleanPhone.includes('9876543210') ? 'usr_student_101' : `dev_customer_${cleanPhone}`);
+    const firebaseUid = customFirebaseUid || `cust_${cleanPhone}`;
     ApiClient.setToken(idToken || firebaseUid);
 
-    // Synchronously set user state so UI updates IMMEDIATELY
+    // Synchronously set initial user state with their real phone number
     const initialUser: UserProfile = {
       id: firebaseUid,
-      name: cleanPhone.includes('9876543210') ? 'Rahul Sharma' : 'Student User',
-      phone: phone || '+91 98765 43210',
-      address: 'Boys Hostel B (Aryabhatta), Room 204',
-      hostelOrPg: 'Boys Hostel B',
-      roomNumber: '204',
+      name: 'Customer',
+      phone: phone,
+      address: '',
+      hostelOrPg: '',
+      roomNumber: '',
       createdAt: new Date().toISOString(),
     };
     setUser(initialUser);
-    showToast(`Welcome back, ${initialUser.name}!`, 'success');
+    showToast('Signed in successfully!', 'success');
 
-    // Asynchronously fetch/sync server profile
+    // Fetch / sync server profile
     ApiClient.getProfile()
       .then((userProfile: any) => {
         if (userProfile) {
           setUser((prev) => ({
             ...prev!,
             id: userProfile.id || firebaseUid,
-            name: userProfile.name || prev?.name || 'Student User',
+            name: userProfile.name || prev?.name || 'Customer',
             phone: userProfile.phone || prev?.phone || phone,
-            address: userProfile.customer?.defaultAddress || prev?.address || 'Hostel B',
+            address: userProfile.customer?.defaultAddress || prev?.address || '',
             hostelOrPg: userProfile.customer?.hostelOrPgName || prev?.hostelOrPg || '',
             roomNumber: userProfile.customer?.roomNumber || prev?.roomNumber || '',
           }));
@@ -409,10 +409,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     idToken?: string
   ) => {
     const cleanPhone = data.phone.replace(/\D/g, '');
-    const firebaseUid = customFirebaseUid || `dev_customer_${cleanPhone}`;
+    const firebaseUid = customFirebaseUid || `cust_${cleanPhone}`;
     ApiClient.setToken(idToken || firebaseUid);
 
-    // Synchronously set user state so UI updates IMMEDIATELY
     const newUser: UserProfile = {
       id: firebaseUid,
       name: data.name,
@@ -425,7 +424,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUser(newUser);
     showToast(`Account created for ${newUser.name}!`, 'success');
 
-    // Register with backend in background
+    // Register with backend
     ApiClient.register({
       firebaseUid,
       name: data.name,
