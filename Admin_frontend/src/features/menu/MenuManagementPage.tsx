@@ -25,6 +25,11 @@ import {
   Filter,
 } from 'lucide-react';
 
+// Inline neutral placeholder — never hits the network, so a dead external
+// image URL can't produce a 404 in the console.
+const FALLBACK_IMG =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23e2e8f0'/%3E%3Cpath d='M28 50h24M32 44h16M36 38h8' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E";
+
 export const MenuManagementPage: React.FC<{ initialStoreId?: string }> = ({ initialStoreId }) => {
   const { success, error } = useToast();
   const [stores, setStores] = useState<Store[]>([]);
@@ -382,6 +387,11 @@ export const MenuManagementPage: React.FC<{ initialStoreId?: string }> = ({ init
                   <img
                     src={item.image}
                     alt={item.name}
+                    onError={(e) => {
+                      // Dead external URL -> swap to inline SVG (no network, can't 404)
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = FALLBACK_IMG;
+                    }}
                     className={`w-20 h-20 rounded-xl object-cover border shrink-0 ${
                       item.isAvailable ? 'border-slate-200' : 'border-rose-200 grayscale opacity-80'
                     }`}

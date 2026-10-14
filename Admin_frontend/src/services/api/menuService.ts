@@ -132,10 +132,11 @@ export const menuService = {
     });
     // Toggle availability immediately if created as false
     if (data.isAvailable === false) {
-      await AdminApiClient.toggleMenuItemAvailability(res.id, false);
-      res.isAvailable = false;
+      const itemRes = res as { id: string };
+      await AdminApiClient.toggleMenuItemAvailability(itemRes.id, false);
+      (res as any).isAvailable = false;
     }
-    return mapBackendItem(res);
+    return mapBackendItem(res as any);
   },
 
   async createMenuItem(data: CreateMenuItemDto): Promise<MenuItem> {
