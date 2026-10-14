@@ -78,8 +78,22 @@ export const DashboardPage: React.FC<{ onNavigate: (tab: NavTab) => void }> = ({
   useEffect(() => {
     loadData();
 
-    const handleDbChange = () => {
-      loadData();
+    const handleDbChange = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      switch (key) {
+        case 'foodfleet_stores':
+          setStores(db.getStores());
+          break;
+        case 'foodfleet_partners':
+          setPartners(db.getPartners());
+          break;
+        case 'foodfleet_managers':
+          setManagers(db.getManagers());
+          break;
+        case 'foodfleet_orders':
+          setRecentOrders(db.getOrders().slice(0, 5));
+          break;
+      }
     };
     window.addEventListener('foodfleet_db_change', handleDbChange);
     return () => window.removeEventListener('foodfleet_db_change', handleDbChange);
